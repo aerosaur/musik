@@ -21,16 +21,13 @@ public class UI {
 
     public init() async {
 
-        var flags: [UIOptionFlag] = [
+        let flags: [UIOptionFlag] = [
             .inhibitSetLocale,
             .noFontChanges,
             .noWinchSighandler,
             .noQuitSighandlers,
+            .suppressBanners,
         ]
-
-        #if !DEBUG
-        flags.append(.suppressBanners)
-        #endif
 
         let config = Config.shared
 
