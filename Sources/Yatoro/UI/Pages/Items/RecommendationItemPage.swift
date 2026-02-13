@@ -9,11 +9,8 @@ public class RecommendationItemPage: DestroyablePage {
 
     private let borderPlane: Plane
     private let pageNamePlane: Plane
-    private let refreshDateLeftPlane: Plane
     private let refreshDateRightPlane: Plane?
-    private let titleLeftPlane: Plane
     private let titleRightPlane: Plane?
-    private let typesLeftPlane: Plane
     private let typesRightPlane: Plane
 
     private let item: MusicPersonalRecommendation
@@ -75,32 +72,17 @@ public class RecommendationItemPage: DestroyablePage {
         self.pageNamePlane = pageNamePlane
         self.pageNamePlane.moveAbove(other: self.borderPlane)
 
-        guard
-            let titleLeftPlane = Plane(
-                in: pagePlane,
-                state: .init(
-                    absX: 2,
-                    absY: 1,
-                    width: 6,
-                    height: 1
-                ),
-                debugID: "RECOMMENDATION_UI_\(item.id)_GL"
-            )
-        else {
-            return nil
-        }
-        self.titleLeftPlane = titleLeftPlane
-        self.titleLeftPlane.moveAbove(other: self.pageNamePlane)
+        let contentWidth = max(state.width, 4) - 4
 
+        // Title - row 1, primary
         if let title = item.title {
-            let titleRightWidth = min(UInt32(title.count), state.width - 10)
             guard
                 let titleRightPlane = Plane(
                     in: pagePlane,
                     state: .init(
-                        absX: 9,
+                        absX: 2,
                         absY: 1,
-                        width: titleRightWidth,
+                        width: min(UInt32(title.count), contentWidth),
                         height: 1
                     ),
                     debugID: "RECOMMENDATION_UI_\(item.id)_GR"
@@ -109,79 +91,20 @@ public class RecommendationItemPage: DestroyablePage {
                 return nil
             }
             self.titleRightPlane = titleRightPlane
-            self.titleRightPlane?.moveAbove(other: self.titleLeftPlane)
+            self.titleRightPlane?.moveAbove(other: self.pageNamePlane)
         } else {
             self.titleRightPlane = nil
         }
 
-        guard
-            let typesLeftPlane = Plane(
-                in: pagePlane,
-                state: .init(
-                    absX: 2,
-                    absY: 3,
-                    width: 6,
-                    height: 1
-                ),
-                debugID: "RECOMMENDATION_UI_\(item.id)_ALL"
-            )
-        else {
-            return nil
-        }
-        self.typesLeftPlane = typesLeftPlane
-        self.typesLeftPlane.moveAbove(other: self.titleRightPlane ?? self.titleLeftPlane)
-
-        var typesStr = ""
-        for type in item.types {
-            typesStr.append("\(type), ")
-        }
-        if typesStr.count >= 2 {
-            typesStr.removeLast(2)
-        }
-        let typesRightWidth = min(UInt32(typesStr.count), state.width - 10)
-        guard
-            let typesRightPlane = Plane(
-                in: pagePlane,
-                state: .init(
-                    absX: 9,
-                    absY: 3,
-                    width: typesRightWidth,
-                    height: 1
-                ),
-                debugID: "RECOMMENDATION_UI_\(item.id)_ALR"
-            )
-        else {
-            return nil
-        }
-        self.typesRightPlane = typesRightPlane
-        self.typesRightPlane.moveAbove(other: self.typesLeftPlane)
-
-        guard
-            let refreshDateLeftPlane = Plane(
-                in: pagePlane,
-                state: .init(
-                    absX: 2,
-                    absY: 2,
-                    width: 8,
-                    height: 1
-                ),
-                debugID: "RECOMMENDATION_UI_\(item.id)_ARL"
-            )
-        else {
-            return nil
-        }
-        self.refreshDateLeftPlane = refreshDateLeftPlane
-        self.refreshDateLeftPlane.moveAbove(other: self.typesRightPlane)
-
+        // Refresh date - row 2, secondary
         if let refreshDate = item.nextRefreshDate?.formatted() {
-            let refreshDateRightWidth = min(UInt32(refreshDate.count), state.width - 12)
             guard
                 let refreshDateRightPlane = Plane(
                     in: pagePlane,
                     state: .init(
-                        absX: 11,
+                        absX: 2,
                         absY: 2,
-                        width: refreshDateRightWidth,
+                        width: min(UInt32(refreshDate.count), contentWidth),
                         height: 1
                     ),
                     debugID: "RECOMMENDATION_UI_\(item.id)_ARR"
@@ -190,10 +113,35 @@ public class RecommendationItemPage: DestroyablePage {
                 return nil
             }
             self.refreshDateRightPlane = refreshDateRightPlane
-            self.refreshDateRightPlane?.moveAbove(other: self.refreshDateLeftPlane)
+            self.refreshDateRightPlane?.moveAbove(other: self.titleRightPlane ?? self.pageNamePlane)
         } else {
             self.refreshDateRightPlane = nil
         }
+
+        // Types - row 3, tertiary
+        var typesStr = ""
+        for type in item.types {
+            typesStr.append("\(type), ")
+        }
+        if typesStr.count >= 2 {
+            typesStr.removeLast(2)
+        }
+        guard
+            let typesRightPlane = Plane(
+                in: pagePlane,
+                state: .init(
+                    absX: 2,
+                    absY: 3,
+                    width: min(UInt32(typesStr.count), contentWidth),
+                    height: 1
+                ),
+                debugID: "RECOMMENDATION_UI_\(item.id)_ALR"
+            )
+        else {
+            return nil
+        }
+        self.typesRightPlane = typesRightPlane
+        self.typesRightPlane.moveAbove(other: self.refreshDateRightPlane ?? self.titleRightPlane ?? self.pageNamePlane)
 
         self.item = item
 
@@ -206,24 +154,18 @@ public class RecommendationItemPage: DestroyablePage {
         plane.setColorPair(colorConfig.page)
         borderPlane.setColorPair(colorConfig.border)
         pageNamePlane.setColorPair(colorConfig.pageName)
-        titleLeftPlane.setColorPair(colorConfig.titleLeft)
         titleRightPlane?.setColorPair(colorConfig.titleRight)
-        typesLeftPlane.setColorPair(colorConfig.typesLeft)
         typesRightPlane.setColorPair(colorConfig.typesRight)
-        refreshDateLeftPlane.setColorPair(colorConfig.refreshDateLeft)
         refreshDateRightPlane?.setColorPair(colorConfig.refreshDateRight)
 
         plane.blank()
         pageNamePlane.putString("Recommendation", at: (0, 0))
-        titleLeftPlane.putString("Title:", at: (0, 0))
         if let title = item.title {
             titleRightPlane?.putString(title, at: (0, 0))
         }
-        refreshDateLeftPlane.putString("Refresh:", at: (0, 0))
         if let refreshDate = item.nextRefreshDate?.formatted() {
             refreshDateRightPlane?.putString(refreshDate, at: (0, 0))
         }
-        typesLeftPlane.putString("Types:", at: (0, 0))
         var typesStr = ""
         for type in item.types {
             typesStr.append("\(type), ")
@@ -245,18 +187,12 @@ public class RecommendationItemPage: DestroyablePage {
         pageNamePlane.erase()
         pageNamePlane.destroy()
 
-        refreshDateLeftPlane.erase()
-        refreshDateLeftPlane.destroy()
         refreshDateRightPlane?.erase()
         refreshDateRightPlane?.destroy()
 
-        titleLeftPlane.erase()
-        titleLeftPlane.destroy()
         titleRightPlane?.erase()
         titleRightPlane?.destroy()
 
-        typesLeftPlane.erase()
-        typesLeftPlane.destroy()
         typesRightPlane.erase()
         typesRightPlane.destroy()
     }

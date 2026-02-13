@@ -9,11 +9,8 @@ public class SongItemPage: DestroyablePage {
 
     private let borderPlane: Plane
     private let pageNamePlane: Plane
-    private let songLeftPlane: Plane
     private let songRightPlane: Plane
-    private let albumLeftPlane: Plane
     private let albumRightPlane: Plane
-    private let artistLeftPlane: Plane
     private let artistRightPlane: Plane
 
     private let item: Song
@@ -87,66 +84,14 @@ public class SongItemPage: DestroyablePage {
         self.pageNamePlane = pageNamePlane
         self.pageNamePlane.moveAbove(other: self.borderPlane)
 
-        guard
-            let artistLeftPlane = Plane(
-                in: pagePlane,
-                state: .init(
-                    absX: 2,
-                    absY: 1,
-                    width: 7,
-                    height: 1
-                ),
-                debugID: "SONG_UI_\(item.id)_ARL"
-            )
-        else {
-            return nil
-        }
-        self.artistLeftPlane = artistLeftPlane
-        self.artistLeftPlane.moveAbove(other: self.pageNamePlane)
-
-        let artistRightWidth = min(UInt32(item.artistName.count), state.width - 11)
-        guard
-            let artistRightPlane = Plane(
-                in: pagePlane,
-                state: .init(
-                    absX: 10,
-                    absY: 1,
-                    width: artistRightWidth,
-                    height: 1
-                ),
-                debugID: "SONG_UI_\(item.id)_ARR"
-            )
-        else {
-            return nil
-        }
-        self.artistRightPlane = artistRightPlane
-        self.artistRightPlane.moveAbove(other: self.artistLeftPlane)
-
-        guard
-            let songLeftPlane = Plane(
-                in: pagePlane,
-                state: .init(
-                    absX: 2,
-                    absY: 2,
-                    width: 5,
-                    height: 1
-                ),
-                debugID: "SONG_UI_\(item.id)_SL"
-            )
-        else {
-            return nil
-        }
-        self.songLeftPlane = songLeftPlane
-        self.songLeftPlane.moveAbove(other: self.artistRightPlane)
-
-        let songRightWidth = min(UInt32(item.title.count), state.width - 9)
+        let contentWidth = max(state.width, 4) - 4
         guard
             let songRightPlane = Plane(
                 in: pagePlane,
                 state: .init(
-                    absX: 8,
-                    absY: 2,
-                    width: songRightWidth,
+                    absX: 2,
+                    absY: 1,
+                    width: min(UInt32(item.title.count), contentWidth),
                     height: 1
                 ),
                 debugID: "SONG_UI_\(item.id)_SR"
@@ -155,33 +100,32 @@ public class SongItemPage: DestroyablePage {
             return nil
         }
         self.songRightPlane = songRightPlane
-        self.songRightPlane.moveAbove(other: self.songLeftPlane)
+        self.songRightPlane.moveAbove(other: self.pageNamePlane)
 
         guard
-            let albumLeftPlane = Plane(
+            let artistRightPlane = Plane(
                 in: pagePlane,
                 state: .init(
                     absX: 2,
-                    absY: 3,
-                    width: 6,
+                    absY: 2,
+                    width: min(UInt32(item.artistName.count), contentWidth),
                     height: 1
                 ),
-                debugID: "SONG_UI_\(item.id)_AL"
+                debugID: "SONG_UI_\(item.id)_ARR"
             )
         else {
             return nil
         }
-        self.albumLeftPlane = albumLeftPlane
-        self.albumLeftPlane.moveAbove(other: self.songRightPlane)
+        self.artistRightPlane = artistRightPlane
+        self.artistRightPlane.moveAbove(other: self.songRightPlane)
 
-        let albumRightWidth = min(UInt32(item.albumTitle?.count ?? 1), state.width - 10)
         guard
             let albumRightPlane = Plane(
                 in: pagePlane,
                 state: .init(
-                    absX: 9,
+                    absX: 2,
                     absY: 3,
-                    width: albumRightWidth,
+                    width: min(UInt32(item.albumTitle?.count ?? 1), contentWidth),
                     height: 1
                 ),
                 debugID: "SONG_UI_\(item.id)_AR"
@@ -190,7 +134,7 @@ public class SongItemPage: DestroyablePage {
             return nil
         }
         self.albumRightPlane = albumRightPlane
-        self.albumRightPlane.moveAbove(other: self.albumLeftPlane)
+        self.albumRightPlane.moveAbove(other: self.artistRightPlane)
 
         self.item = item
 
@@ -209,21 +153,15 @@ public class SongItemPage: DestroyablePage {
         plane.setColorPair(colorConfig.page)
         borderPlane.setColorPair(colorConfig.border)
         pageNamePlane.setColorPair(colorConfig.pageName)
-        artistLeftPlane.setColorPair(colorConfig.artistLeft)
-        artistRightPlane.setColorPair(colorConfig.artistRight)
-        songLeftPlane.setColorPair(colorConfig.songLeft)
         songRightPlane.setColorPair(colorConfig.songRight)
-        albumLeftPlane.setColorPair(colorConfig.albumLeft)
+        artistRightPlane.setColorPair(colorConfig.artistRight)
         albumRightPlane.setColorPair(colorConfig.albumRight)
 
         plane.blank()
         borderPlane.windowBorder(width: state.width, height: state.height)
         pageNamePlane.putString("Song", at: (0, 0))
-        artistLeftPlane.putString("Artist:", at: (0, 0))
-        artistRightPlane.putString(item.artistName, at: (0, 0))
-        songLeftPlane.putString("Song:", at: (0, 0))
         songRightPlane.putString(item.title, at: (0, 0))
-        albumLeftPlane.putString("Album:", at: (0, 0))
+        artistRightPlane.putString(item.artistName, at: (0, 0))
         albumRightPlane.putString(item.albumTitle ?? " ", at: (0, 0))
     }
 
@@ -237,20 +175,14 @@ public class SongItemPage: DestroyablePage {
         pageNamePlane.erase()
         pageNamePlane.destroy()
 
-        albumLeftPlane.erase()
-        albumLeftPlane.destroy()
-        albumRightPlane.erase()
-        albumRightPlane.destroy()
-
-        songLeftPlane.erase()
-        songLeftPlane.destroy()
         songRightPlane.erase()
         songRightPlane.destroy()
 
-        artistLeftPlane.erase()
-        artistLeftPlane.destroy()
         artistRightPlane.erase()
         artistRightPlane.destroy()
+
+        albumRightPlane.erase()
+        albumRightPlane.destroy()
     }
 
     public func render() async {

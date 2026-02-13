@@ -16,6 +16,10 @@ public class QueuePage: Page {
 
     private var currentQueue: ApplicationMusicPlayer.Queue.Entries?
     private var cache: [Page]
+    private var queueIndicesPlane: Plane?
+    private var lastQueueSelectedIndex: Int = -1
+    private var lastQueueFocused: Bool = false
+    private var scrollOffset: Int = 0
 
     private var maxItemsDisplayed: Int {
         (Int(self.state.height) - 7) / 5
@@ -25,6 +29,26 @@ public class QueuePage: Page {
         self.state = newPageState
 
         plane.updateByPageState(state)
+
+        // If too small to display (hidden), just erase everything
+        guard state.height >= 5 && state.width >= 5 else {
+            plane.erase()
+            borderPlane.erase()
+            pageNamePlane.erase()
+            shufflePlane.erase()
+            repeatPlane.erase()
+            queueIndicesPlane?.erase()
+            for case let item as SongItemPage in cache {
+                await item.destroy()
+            }
+            cache = []
+            queueIndicesPlane?.erase()
+            queueIndicesPlane?.destroy()
+            queueIndicesPlane = nil
+            self.currentQueue = nil
+            return
+        }
+
         plane.blank()
 
         borderPlane.updateByPageState(.init(absX: 0, absY: 0, width: state.width, height: state.height))
@@ -101,7 +125,7 @@ public class QueuePage: Page {
                 state: .init(
                     absX: 2,
                     absY: 0,
-                    width: 12,
+                    width: 7,
                     height: 1
                 ),
                 debugID: "QUEUE_PAGE_NAME"
@@ -157,9 +181,11 @@ public class QueuePage: Page {
         shufflePlane.setColorPair(colorConfig.shuffleMode)
         repeatPlane.setColorPair(colorConfig.repeatMode)
 
+        guard state.width >= 5 && state.height >= 5 else { return }
+
         plane.blank()
         borderPlane.windowBorder(width: state.width, height: state.height)
-        pageNamePlane.putString("Player Queue", at: (0, 0))
+        pageNamePlane.putString("Up Next", at: (0, 0))
 
         for item in cache {
             item.updateColors()
@@ -167,6 +193,9 @@ public class QueuePage: Page {
     }
 
     public func render() async {
+
+        // Hidden state - don't render
+        guard state.height >= 5 && state.width >= 5 else { return }
 
         switch Player.shared.player.state.repeatMode {
         case Optional.none, .some(.none):
@@ -193,6 +222,67 @@ public class QueuePage: Page {
             logger?.error("QueuePage: Unhandled shuffle mode.")
         }
 
+        let queueFocused = SearchManager.shared.queueFocused
+
+        // Clamp selection to valid range every frame (queue shifts during playback)
+        let queueCount = Player.shared.queue.count
+        if queueCount == 0 {
+            SearchManager.shared.queueSelectedIndex = 0
+        } else if SearchManager.shared.queueSelectedIndex >= queueCount {
+            SearchManager.shared.queueSelectedIndex = queueCount - 1
+        }
+
+        let queueSelectedIndex = SearchManager.shared.queueSelectedIndex
+
+        // Handle scroll offset when queue is focused
+        if queueFocused {
+            let maxItems = maxItemsDisplayed + 1
+            if queueSelectedIndex >= scrollOffset + maxItems {
+                scrollOffset = queueSelectedIndex - maxItems + 1
+                currentQueue = nil  // Force re-render
+            } else if queueSelectedIndex < scrollOffset {
+                scrollOffset = queueSelectedIndex
+                currentQueue = nil  // Force re-render
+            }
+        } else if scrollOffset != 0 {
+            scrollOffset = 0
+            currentQueue = nil  // Force re-render
+        }
+
+        // Update selection indicator
+        if queueFocused != lastQueueFocused || queueSelectedIndex != lastQueueSelectedIndex {
+            lastQueueFocused = queueFocused
+            lastQueueSelectedIndex = queueSelectedIndex
+            let colorConfig = Theme.shared.queue
+            let accentColor = colorConfig.pageName
+            let dimColor = colorConfig.border
+            if queueFocused && !cache.isEmpty {
+                queueIndicesPlane?.erase()
+                for i in 0..<cache.count {
+                    let realIndex = i + scrollOffset
+                    if realIndex == 0 {
+                        queueIndicesPlane?.setColorPair(accentColor)
+                        queueIndicesPlane?.putString("▶", at: (x: 0, y: 1 + Int32(i) * 5))
+                    } else if realIndex == queueSelectedIndex {
+                        queueIndicesPlane?.setColorPair(accentColor)
+                        queueIndicesPlane?.putString(">", at: (x: 0, y: 1 + Int32(i) * 5))
+                    } else {
+                        queueIndicesPlane?.setColorPair(dimColor)
+                        queueIndicesPlane?.putString(" ", at: (x: 0, y: 1 + Int32(i) * 5))
+                    }
+                }
+                queueIndicesPlane?.setColorPair(dimColor)
+            } else {
+                // Still show now-playing marker even when not focused
+                queueIndicesPlane?.erase()
+                if !cache.isEmpty && scrollOffset == 0 {
+                    queueIndicesPlane?.setColorPair(accentColor)
+                    queueIndicesPlane?.putString("▶", at: (x: 0, y: 1))
+                    queueIndicesPlane?.setColorPair(dimColor)
+                }
+            }
+        }
+
         guard currentQueue != Player.shared.queue else {
             return
         }
@@ -201,18 +291,41 @@ public class QueuePage: Page {
             await item.destroy()
         }
         cache = []
+        queueIndicesPlane?.erase()
+        queueIndicesPlane?.destroy()
+        queueIndicesPlane = nil
+
         currentQueue = Player.shared.queue
+        guard let currentQueue = currentQueue else { return }
+
+        // Create indices plane
+        queueIndicesPlane = Plane(
+            in: borderPlane,
+            state: .init(
+                absX: 0,
+                absY: 0,
+                width: 1,
+                height: state.height - 2
+            ),
+            debugID: "QUEUE_IDX"
+        )
+        let colorConfig = Theme.shared.queue
+        queueIndicesPlane?.setColorPair(colorConfig.border)
+
+        let maxItems = maxItemsDisplayed + 1
         var i = 0
-        for itemIndex in currentQueue!.indices {
-            switch currentQueue![itemIndex].item {
+        let entries = Array(currentQueue)
+        let end = min(entries.count, scrollOffset + maxItems)
+        for itemIndex in scrollOffset..<end {
+            switch entries[itemIndex].item {
             case .song(let song):
                 guard
                     let page = SongItemPage(
                         in: self.borderPlane,
                         state: .init(
-                            absX: 1,
+                            absX: 2,
                             absY: 1 + Int32(i) * 5,
-                            width: state.width - 2,
+                            width: state.width - 3,
                             height: 5
                         ),
                         type: .queuePage,
@@ -225,10 +338,23 @@ public class QueuePage: Page {
                 self.cache.append(page)
             default: break
             }
-            if itemIndex >= maxItemsDisplayed {
-                break
+        }
+
+        // Draw indicators
+        for i in 0..<cache.count {
+            let realIndex = i + scrollOffset
+            if realIndex == 0 {
+                queueIndicesPlane?.setColorPair(colorConfig.pageName)
+                queueIndicesPlane?.putString("▶", at: (x: 0, y: 1 + Int32(i) * 5))
+            } else if queueFocused && realIndex == queueSelectedIndex {
+                queueIndicesPlane?.setColorPair(colorConfig.pageName)
+                queueIndicesPlane?.putString(">", at: (x: 0, y: 1 + Int32(i) * 5))
+            } else {
+                queueIndicesPlane?.setColorPair(colorConfig.border)
+                queueIndicesPlane?.putString(" ", at: (x: 0, y: 1 + Int32(i) * 5))
             }
         }
+        queueIndicesPlane?.setColorPair(colorConfig.border)
 
     }
 

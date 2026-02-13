@@ -9,12 +9,12 @@ public class PlaylistItemPage: DestroyablePage {
 
     private let borderPlane: Plane
     private let pageNamePlane: Plane
-    private let descriptionLeftPlane: Plane
     private let descriptionRightPlane: Plane
-    private let curatorLeftPlane: Plane
     private let curatorRightPlane: Plane
-    private let playlistLeftPlane: Plane
     private let playlistRightPlane: Plane
+
+    private var artworkPlane: Plane?
+    private var artworkVisual: Visual?
 
     private let item: Playlist
 
@@ -84,31 +84,16 @@ public class PlaylistItemPage: DestroyablePage {
         self.pageNamePlane = pageNamePlane
         self.pageNamePlane.moveAbove(other: self.borderPlane)
 
-        guard
-            let playlistLeftPlane = Plane(
-                in: pagePlane,
-                state: .init(
-                    absX: 2,
-                    absY: 1,
-                    width: 9,
-                    height: 1
-                ),
-                debugID: "PLAYLIST_UI_\(item.id)_PL"
-            )
-        else {
-            return nil
-        }
-        self.playlistLeftPlane = playlistLeftPlane
-        self.playlistLeftPlane.moveAbove(other: self.pageNamePlane)
+        let contentWidth = max(state.width, 4) - 4
 
-        let playlistRightWidth = min(UInt32(item.name.count), state.width - 13)
+        // Playlist name - row 1, primary
         guard
             let playlistRightPlane = Plane(
                 in: pagePlane,
                 state: .init(
-                    absX: 12,
+                    absX: 2,
                     absY: 1,
-                    width: playlistRightWidth,
+                    width: min(UInt32(item.name.count), contentWidth),
                     height: 1
                 ),
                 debugID: "PLAYLIST_UI_\(item.id)_PR"
@@ -117,69 +102,16 @@ public class PlaylistItemPage: DestroyablePage {
             return nil
         }
         self.playlistRightPlane = playlistRightPlane
-        self.playlistRightPlane.moveAbove(other: self.playlistLeftPlane)
+        self.playlistRightPlane.moveAbove(other: self.pageNamePlane)
 
-        guard
-            let descriptionLeftPlane = Plane(
-                in: pagePlane,
-                state: .init(
-                    absX: 2,
-                    absY: 3,
-                    width: 12,
-                    height: 1
-                ),
-                debugID: "PLAYLIST_UI_\(item.id)_DL"
-            )
-        else {
-            return nil
-        }
-        self.descriptionLeftPlane = descriptionLeftPlane
-        self.descriptionLeftPlane.moveAbove(other: self.playlistRightPlane)
-
-        var descriptionRightWidth = min(UInt32(item.standardDescription?.count ?? 1), state.width - 16)
-        if descriptionRightWidth == 0 { descriptionRightWidth = 1 }
-        guard
-            let descriptionRightPlane = Plane(
-                in: pagePlane,
-                state: .init(
-                    absX: 15,
-                    absY: 3,
-                    width: descriptionRightWidth,
-                    height: 1
-                ),
-                debugID: "PLAYLIST_UI_\(item.id)_DR"
-            )
-        else {
-            return nil
-        }
-        self.descriptionRightPlane = descriptionRightPlane
-        self.descriptionRightPlane.moveAbove(other: self.descriptionLeftPlane)
-
-        guard
-            let curatorLeftPlane = Plane(
-                in: pagePlane,
-                state: .init(
-                    absX: 2,
-                    absY: 2,
-                    width: 8,
-                    height: 1
-                ),
-                debugID: "PLAYLIST_UI_\(item.id)_CL"
-            )
-        else {
-            return nil
-        }
-        self.curatorLeftPlane = curatorLeftPlane
-        self.curatorLeftPlane.moveAbove(other: self.descriptionRightPlane)
-
-        let curatorRightWidth = min(UInt32(item.curatorName?.count ?? 1), state.width - 12)
+        // Curator - row 2, secondary
         guard
             let curatorRightPlane = Plane(
                 in: pagePlane,
                 state: .init(
-                    absX: 11,
+                    absX: 2,
                     absY: 2,
-                    width: curatorRightWidth,
+                    width: min(UInt32(item.curatorName?.count ?? 1), contentWidth),
                     height: 1
                 ),
                 debugID: "PLAYLIST_UI_\(item.id)_CR"
@@ -188,11 +120,72 @@ public class PlaylistItemPage: DestroyablePage {
             return nil
         }
         self.curatorRightPlane = curatorRightPlane
-        self.curatorRightPlane.moveAbove(other: self.curatorLeftPlane)
+        self.curatorRightPlane.moveAbove(other: self.playlistRightPlane)
+
+        // Description - row 3, tertiary
+        var descWidth = min(UInt32(item.standardDescription?.count ?? 1), contentWidth)
+        if descWidth == 0 { descWidth = 1 }
+        guard
+            let descriptionRightPlane = Plane(
+                in: pagePlane,
+                state: .init(
+                    absX: 2,
+                    absY: 3,
+                    width: descWidth,
+                    height: 1
+                ),
+                debugID: "PLAYLIST_UI_\(item.id)_DR"
+            )
+        else {
+            return nil
+        }
+        self.descriptionRightPlane = descriptionRightPlane
+        self.descriptionRightPlane.moveAbove(other: self.curatorRightPlane)
 
         self.item = item
 
         updateColors()
+        loadArtwork()
+    }
+
+    private func loadArtwork() {
+        guard state.width > 15 else { return }
+        if let url = item.artwork?.url(width: 50, height: 50) {
+            downloadImageAndConvertToRGBA(url: url, width: 50, heigth: 50) { pixelArray in
+                if let pixelArray = pixelArray {
+                    Task { @MainActor in
+                        self.handleArtwork(pixelArray: pixelArray)
+                    }
+                }
+            }
+        }
+    }
+
+    private func handleArtwork(pixelArray: [UInt8]) {
+        guard state.width > 15, let notcurses = UI.notcurses else { return }
+        let artWidth: UInt32 = 6
+        let artHeight: UInt32 = 3
+        artworkPlane = Plane(
+            in: plane,
+            state: .init(
+                absX: Int32(state.width) - Int32(artWidth) - 1,
+                absY: 1,
+                width: artWidth,
+                height: artHeight
+            ),
+            debugID: "PLAYLIST_ART_\(item.id)"
+        )
+        guard let artworkPlane else { return }
+        artworkPlane.moveAbove(other: borderPlane)
+        artworkVisual = Visual(
+            in: notcurses,
+            width: 50,
+            height: 50,
+            from: pixelArray,
+            for: artworkPlane,
+            blit: .braille
+        )
+        artworkVisual?.render()
     }
 
     public func updateColors() {
@@ -206,25 +199,23 @@ public class PlaylistItemPage: DestroyablePage {
         plane.setColorPair(colorConfig.page)
         borderPlane.setColorPair(colorConfig.border)
         pageNamePlane.setColorPair(colorConfig.pageName)
-        playlistLeftPlane.setColorPair(colorConfig.playlistLeft)
         playlistRightPlane.setColorPair(colorConfig.playlistRight)
-        descriptionLeftPlane.setColorPair(colorConfig.descriptionLeft)
         descriptionRightPlane.setColorPair(colorConfig.descriptionRight)
-        curatorLeftPlane.setColorPair(colorConfig.curatorLeft)
         curatorRightPlane.setColorPair(colorConfig.curatorRight)
 
         plane.blank()
         borderPlane.windowBorder(width: state.width, height: state.height)
         pageNamePlane.putString("Playlist", at: (0, 0))
-        playlistLeftPlane.putString("Playlist:", at: (0, 0))
         playlistRightPlane.putString(item.name, at: (0, 0))
-        descriptionLeftPlane.putString("Description:", at: (0, 0))
-        descriptionRightPlane.putString(item.standardDescription ?? "", at: (0, 0))
-        curatorLeftPlane.putString("Curator:", at: (0, 0))
         curatorRightPlane.putString(item.curatorName ?? "", at: (0, 0))
+        descriptionRightPlane.putString(item.standardDescription ?? "", at: (0, 0))
     }
 
     public func destroy() async {
+        artworkVisual?.destroy()
+        artworkPlane?.erase()
+        artworkPlane?.destroy()
+
         plane.erase()
         plane.destroy()
 
@@ -234,18 +225,12 @@ public class PlaylistItemPage: DestroyablePage {
         pageNamePlane.erase()
         pageNamePlane.destroy()
 
-        curatorLeftPlane.erase()
-        curatorLeftPlane.destroy()
         curatorRightPlane.erase()
         curatorRightPlane.destroy()
 
-        descriptionLeftPlane.erase()
-        descriptionLeftPlane.destroy()
         descriptionRightPlane.erase()
         descriptionRightPlane.destroy()
 
-        playlistLeftPlane.erase()
-        playlistLeftPlane.destroy()
         playlistRightPlane.erase()
         playlistRightPlane.destroy()
     }

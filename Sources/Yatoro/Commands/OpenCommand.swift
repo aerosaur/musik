@@ -144,6 +144,14 @@ struct OpenCommand: AsyncParsableCommand {
                 default: break
                 }
 
+            case .multiSearchResult(_):
+                await CommandInput.shared.setLastCommandOutput("Use Enter to select from multi-search results.")
+                return
+
+            case .dualPlaylistSearchResult(_):
+                await CommandInput.shared.setLastCommandOutput("Use Enter to select from playlist results.")
+                return
+
             case .help:
                 await CommandInput.shared.setLastCommandOutput("Help page has no items to open.")
                 return
@@ -262,10 +270,18 @@ struct OpenCommand: AsyncParsableCommand {
     @MainActor
     private static func openArtist(_ artistItem: Artist) async throws {
         let artistItem = try await artistItem.with([.topSongs, .albums])
+        // Sort albums chronologically (newest first)
+        var sortedAlbums: MusicItemCollection<Album>?
+        if let albums = artistItem.albums {
+            let sorted = albums.sorted { a, b in
+                (a.releaseDate ?? .distantPast) > (b.releaseDate ?? .distantPast)
+            }
+            sortedAlbums = MusicItemCollection(sorted)
+        }
         let artistDescription = ArtistDescriptionResult(
             artist: artistItem,
             topSongs: artistItem.topSongs,
-            lastAlbums: artistItem.albums
+            lastAlbums: sortedAlbums
         )
         SearchManager.shared.lastSearchResult = .init(
             previous: SearchManager.shared.lastSearchResult,

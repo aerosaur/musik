@@ -15,6 +15,29 @@ public struct SearchResult {
 
 }
 
+public struct MultiSearchResult {
+
+    public let timestamp: Date
+
+    public let searchType: SearchType
+    public let searchPhrase: String
+
+    public let artists: MusicItemCollection<Artist>?
+    public let albums: MusicItemCollection<Album>?
+    public let songs: MusicItemCollection<Song>?
+
+}
+
+public struct DualPlaylistSearchResult {
+
+    public let timestamp: Date
+    public let searchPhrase: String
+
+    public let libraryPlaylists: MusicItemCollection<Playlist>?
+    public let catalogPlaylists: MusicItemCollection<Playlist>?
+
+}
+
 public enum SearchType: Hashable, CaseIterable, Sendable {
     case recentlyPlayed
     case recommended
@@ -60,6 +83,8 @@ public enum OpenedResult {
     case playlistDescription(PlaylistDescriptionResult)
     case recommendationDescription(RecommendationDescriptionResult)
     case searchResult(SearchResult)
+    case multiSearchResult(MultiSearchResult)
+    case dualPlaylistSearchResult(DualPlaylistSearchResult)
     case help
 }
 
@@ -76,13 +101,234 @@ public class ResultNode {
     }
 }
 
-public class SearchManager: @unchecked Sendable {
+@MainActor
+public class SearchManager {
 
     public static let shared: SearchManager = .init()
 
     public var lastSearchResult: ResultNode?
 
+    /// Currently selected item index in search results
+    public var selectedIndex: Int = 0
+
+    /// Currently selected column for multi-search (0=artists, 1=albums, 2=songs)
+    public var selectedColumn: Int = 0
+
+    /// Whether the queue panel is focused (vs search)
+    public var queueFocused: Bool = false
+
+    /// Currently selected item index in the queue
+    public var queueSelectedIndex: Int = 0
+
+    /// Whether we're in multi-column search mode
+    public var isMultiSearch: Bool {
+        guard let lastResult = lastSearchResult else { return false }
+        if case .multiSearchResult(_) = lastResult.result { return true }
+        if case .dualPlaylistSearchResult(_) = lastResult.result { return true }
+        return false
+    }
+
+    /// Number of columns in multi-search that have results
+    public var multiSearchColumnCount: Int {
+        guard let lastResult = lastSearchResult else { return 0 }
+        if case .multiSearchResult(let msr) = lastResult.result {
+            var count = 0
+            if msr.artists != nil && !(msr.artists!.isEmpty) { count += 1 }
+            if msr.albums != nil && !(msr.albums!.isEmpty) { count += 1 }
+            if msr.songs != nil && !(msr.songs!.isEmpty) { count += 1 }
+            return count
+        }
+        if case .dualPlaylistSearchResult(let dpr) = lastResult.result {
+            var count = 0
+            if dpr.libraryPlaylists != nil && !(dpr.libraryPlaylists!.isEmpty) { count += 1 }
+            if dpr.catalogPlaylists != nil && !(dpr.catalogPlaylists!.isEmpty) { count += 1 }
+            return count
+        }
+        return 0
+    }
+
+    /// Maps selectedColumn to the actual column type in multi-search
+    /// Returns 0=artists, 1=albums, 2=songs based on which columns have data
+    /// For dual playlist: 0=library, 1=catalog
+    public func multiSearchColumnType() -> Int {
+        guard let lastResult = lastSearchResult else { return 0 }
+        if case .multiSearchResult(let msr) = lastResult.result {
+            var columns: [Int] = []
+            if msr.artists != nil && !(msr.artists!.isEmpty) { columns.append(0) }
+            if msr.albums != nil && !(msr.albums!.isEmpty) { columns.append(1) }
+            if msr.songs != nil && !(msr.songs!.isEmpty) { columns.append(2) }
+            if selectedColumn < columns.count {
+                return columns[selectedColumn]
+            }
+        }
+        if case .dualPlaylistSearchResult(let dpr) = lastResult.result {
+            var columns: [Int] = []
+            if dpr.libraryPlaylists != nil && !(dpr.libraryPlaylists!.isEmpty) { columns.append(0) }
+            if dpr.catalogPlaylists != nil && !(dpr.catalogPlaylists!.isEmpty) { columns.append(1) }
+            if selectedColumn < columns.count {
+                return columns[selectedColumn]
+            }
+        }
+        return 0
+    }
+
+    /// Number of navigable items in the current view
+    public var currentItemCount: Int {
+        guard let lastResult = lastSearchResult else { return 0 }
+        switch lastResult.result {
+        case .searchResult(let searchResult):
+            return searchResult.result.count
+        case .multiSearchResult(let msr):
+            switch multiSearchColumnType() {
+            case 0: return msr.artists?.count ?? 0
+            case 1: return msr.albums?.count ?? 0
+            case 2: return msr.songs?.count ?? 0
+            default: return 0
+            }
+        case .dualPlaylistSearchResult(let dpr):
+            switch multiSearchColumnType() {
+            case 0: return dpr.libraryPlaylists?.count ?? 0
+            case 1: return dpr.catalogPlaylists?.count ?? 0
+            default: return 0
+            }
+        case .playlistDescription(let pd):
+            return pd.songs.count
+        case .albumDescription(let ad):
+            return ad.songs.count
+        case .artistDescription(let ad):
+            return ad.lastAlbums?.count ?? 0
+        case .recommendationDescription(let rd):
+            return (rd.albums?.count ?? 0) + (rd.stations?.count ?? 0) + (rd.playlists?.count ?? 0)
+        case .songDescription(_):
+            return 1
+        case .help:
+            return 0
+        }
+    }
+
+    public func selectNext() {
+        let count = currentItemCount
+        if count > 0 && selectedIndex < count - 1 {
+            selectedIndex += 1
+        }
+    }
+
+    public func selectPrevious() {
+        if selectedIndex > 0 {
+            selectedIndex -= 1
+        }
+    }
+
+    public func selectLeft() {
+        if selectedColumn > 0 {
+            selectedColumn -= 1
+            let count = currentItemCount
+            if selectedIndex >= count {
+                selectedIndex = max(0, count - 1)
+            }
+        }
+    }
+
+    public func selectRight() {
+        let maxCol = multiSearchColumnCount - 1
+        if selectedColumn < maxCol {
+            selectedColumn += 1
+            let count = currentItemCount
+            if selectedIndex >= count {
+                selectedIndex = max(0, count - 1)
+            }
+        }
+    }
+
+    public func resetSelection() {
+        selectedIndex = 0
+        selectedColumn = 0
+    }
+
+    /// Returns true if the selected item should be opened (drilled into)
+    /// rather than added to queue and played.
+    public func selectedItemShouldOpen() -> Bool {
+        guard let lastResult = lastSearchResult else { return false }
+        switch lastResult.result {
+        case .searchResult(let searchResult):
+            switch searchResult.itemType {
+            case .artist:
+                return true
+            case .song, .station, .album, .playlist:
+                return false
+            }
+        case .multiSearchResult(_):
+            // Artists open, albums queue, songs queue
+            return multiSearchColumnType() == 0
+        case .dualPlaylistSearchResult(_):
+            return false
+        case .recommendationDescription(_):
+            return true
+        case .artistDescription(_), .albumDescription(_),
+             .playlistDescription(_), .songDescription(_):
+            return false
+        case .help:
+            return false
+        }
+    }
+
+    /// Converts a flat selectedIndex to the correct prefixed argument string
+    /// for the current view context.
+    public func argumentForIndex(_ index: Int) -> String {
+        guard let lastResult = lastSearchResult else { return "\(index)" }
+        switch lastResult.result {
+        case .searchResult(_), .playlistDescription(_), .songDescription(_), .help:
+            return "\(index)"
+        case .multiSearchResult(_), .dualPlaylistSearchResult(_):
+            return "\(index)"
+        case .albumDescription(_):
+            return "s\(index)"
+        case .artistDescription(_):
+            return "a\(index)"
+        case .recommendationDescription(let rd):
+            let albumCount = rd.albums?.count ?? 0
+            let stationCount = rd.stations?.count ?? 0
+            if index < albumCount {
+                return "a\(index)"
+            } else if index < albumCount + stationCount {
+                return "s\(index - albumCount)"
+            } else {
+                return "p\(index - albumCount - stationCount)"
+            }
+        }
+    }
+
+    /// Returns the argument string for the currently selected item.
+    public func selectedItemArgument() -> String {
+        return argumentForIndex(selectedIndex)
+    }
+
     private init() {}
+
+    /// Load recently played as the root search result.
+    /// This is the "home" state - close always falls back here.
+    /// Retries with increasing delays since MusicKit may not be ready at startup.
+    public func loadRecentlyPlayed() async {
+        let delays: [UInt64] = [0, 1_000_000_000, 2_000_000_000, 3_000_000_000]
+        for (attempt, delay) in delays.enumerated() {
+            if delay > 0 {
+                try? await Task.sleep(nanoseconds: delay)
+            }
+            await newSearch(
+                for: nil,
+                itemType: .album,
+                in: .recentlyPlayed,
+                inPlace: true,
+                limit: 25
+            )
+            if lastSearchResult != nil {
+                lastSearchResult?.previous = nil
+                await logger?.debug("Recently played loaded on attempt \(attempt + 1)")
+                return
+            }
+            await logger?.debug("Recently played attempt \(attempt + 1) failed, retrying...")
+        }
+    }
 
     public func newSearch(
         for phrase: String? = nil,
@@ -93,6 +339,7 @@ public class SearchManager: @unchecked Sendable {
     )
         async
     {
+        resetSelection()
         var result: (any AnyMusicItemCollection)?
 
         let limit = Int(limit)
@@ -148,6 +395,69 @@ public class SearchManager: @unchecked Sendable {
             result: result
         )
         self.lastSearchResult = ResultNode(previous: lastSearchResult, .searchResult(searchResult), inPlace: inPlace)
+    }
+
+    public func newMultiSearch(
+        for phrase: String,
+        in searchType: SearchType,
+        limit: UInt32
+    ) async {
+        resetSelection()
+        let limit = Int(limit)
+
+        var artists: MusicItemCollection<Artist>?
+        var albums: MusicItemCollection<Album>?
+        var songs: MusicItemCollection<Song>?
+
+        switch searchType {
+        case .catalogSearch:
+            artists = await searchCatalogBatch(for: phrase, limit: limit) as MusicItemCollection<Artist>?
+            albums = await searchCatalogBatch(for: phrase, limit: limit) as MusicItemCollection<Album>?
+            songs = await searchCatalogBatch(for: phrase, limit: limit) as MusicItemCollection<Song>?
+        case .librarySearch:
+            artists = await searchUserLibraryBatch(for: phrase, limit: limit) as MusicItemCollection<Artist>?
+            albums = await searchUserLibraryBatch(for: phrase, limit: limit) as MusicItemCollection<Album>?
+            songs = await searchUserLibraryBatch(for: phrase, limit: limit) as MusicItemCollection<Song>?
+        default:
+            return
+        }
+
+        let multiResult = MultiSearchResult(
+            timestamp: Date.now,
+            searchType: searchType,
+            searchPhrase: phrase,
+            artists: artists,
+            albums: albums,
+            songs: songs
+        )
+        self.lastSearchResult = ResultNode(
+            previous: lastSearchResult,
+            .multiSearchResult(multiResult),
+            inPlace: true
+        )
+    }
+
+    public func newDualPlaylistSearch(
+        for phrase: String,
+        limit: UInt32
+    ) async {
+        resetSelection()
+        let limit = Int(limit)
+
+        let libraryPlaylists = await searchUserLibraryBatch(for: phrase, limit: limit) as MusicItemCollection<Playlist>?
+        let catalogPlaylists = await searchCatalogBatch(for: phrase, limit: limit) as MusicItemCollection<Playlist>?
+
+        let dualResult = DualPlaylistSearchResult(
+            timestamp: Date.now,
+            searchPhrase: phrase,
+            libraryPlaylists: libraryPlaylists,
+            catalogPlaylists: catalogPlaylists
+        )
+        self.lastSearchResult = ResultNode(
+            previous: lastSearchResult,
+            .dualPlaylistSearchResult(dualResult),
+            inPlace: true
+        )
     }
 
     public func showHelp() {

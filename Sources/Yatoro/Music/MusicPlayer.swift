@@ -45,16 +45,15 @@ public final class AudioPlayerManager: Sendable {
     }
 
     var upNext: Song? {
-        if let currentEntry = player.queue.currentEntry {
-            let index = player.queue.entries.index(
-                after: player.queue.entries.firstIndex(of: currentEntry)!
-            )
-            switch player.queue.entries[index].item {
-            case .song(let song): return song
-            default: return nil
-            }
+        guard let currentEntry = player.queue.currentEntry,
+              let currentIndex = player.queue.entries.firstIndex(of: currentEntry)
+        else { return nil }
+        let nextIndex = player.queue.entries.index(after: currentIndex)
+        guard nextIndex < player.queue.entries.endIndex else { return nil }
+        switch player.queue.entries[nextIndex].item {
+        case .song(let song): return song
+        default: return nil
         }
-        return nil
     }
 
     public var status: ApplicationMusicPlayer.PlaybackStatus {
@@ -217,6 +216,32 @@ public extension AudioPlayerManager {
         }
     }
 
+    func addPlaylistToQueue(
+        playlist: Playlist,
+        at position: ApplicationMusicPlayer.Queue.EntryInsertionPosition
+    ) async {
+        do {
+            if player.queue.entries.isEmpty {
+                player.queue = .init(for: [playlist])
+            } else {
+                try await player.queue.insert(playlist, position: position)
+            }
+        } catch {
+            await logger?.error(
+                "Unable to add playlist to player queue: \(error.localizedDescription)"
+            )
+            return
+        }
+        do {
+            if !player.isPreparedToPlay {
+                await logger?.trace("Preparing player...")
+                try await player.prepareToPlay()
+            }
+        } catch {
+            await logger?.critical("Unable to prepare player: \(error.localizedDescription)")
+        }
+    }
+
     func setTime(
         seconds: Int,
         relative: Bool
@@ -256,6 +281,46 @@ public extension AudioPlayerManager {
         }
         player.playbackTime = Double(seconds)
         await logger?.trace("Set time for current song: \(player.playbackTime)")
+    }
+
+    func volumeUp() async {
+        let process = Process()
+        process.executableURL = URL(fileURLWithPath: "/usr/bin/osascript")
+        process.arguments = ["-e", "set volume output volume ((output volume of (get volume settings)) + 10)"]
+        do {
+            try process.run()
+            process.waitUntilExit()
+        } catch {
+            await logger?.error("Failed to increase volume: \(error.localizedDescription)")
+        }
+    }
+
+    func volumeDown() async {
+        let process = Process()
+        process.executableURL = URL(fileURLWithPath: "/usr/bin/osascript")
+        process.arguments = ["-e", "set volume output volume ((output volume of (get volume settings)) - 10)"]
+        do {
+            try process.run()
+            process.waitUntilExit()
+        } catch {
+            await logger?.error("Failed to decrease volume: \(error.localizedDescription)")
+        }
+    }
+
+    func removeFromQueue(at visibleIndex: Int) async {
+        guard let currentEntry = player.queue.currentEntry,
+              let currentPosition = player.queue.entries.firstIndex(where: { currentEntry.id == $0.id })
+        else {
+            await logger?.debug("removeFromQueue: No current entry")
+            return
+        }
+        let actualIndex = player.queue.entries.index(currentPosition, offsetBy: visibleIndex)
+        guard player.queue.entries.indices.contains(actualIndex) else {
+            await logger?.debug("removeFromQueue: Index out of range")
+            return
+        }
+        player.queue.entries.remove(at: actualIndex)
+        await logger?.debug("removeFromQueue: Removed entry at visible index \(visibleIndex)")
     }
 
     func playStationFromCurrentSong() async {

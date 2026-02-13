@@ -47,6 +47,7 @@ public class UI {
             fatalError("Failed to initialize notcurses UI.")
         }
         UI.notcurses = notcurses
+        setupCrashHandlers(notcurses: notcurses)
         logger?.debug("Notcurses initialized.")
 
         guard let stdPlane = Plane(in: notcurses) else {
@@ -80,6 +81,12 @@ public class UI {
         await pageManager.resizePages(stdPlane.width, stdPlane.height)
 
         await inputQueue.start()
+
+        // Auto-load recently played using the same code path as `:search -r`
+        Task {
+            try? await Task.sleep(nanoseconds: 2_000_000_000)
+            await SearchCommand.execute(arguments: ["-r"])
+        }
 
         await appLoop()
     }

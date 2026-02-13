@@ -9,11 +9,8 @@ public class StationItemPage: DestroyablePage {
 
     private let borderPlane: Plane
     private let pageNamePlane: Plane
-    private let notesLeftPlane: Plane
     private let notesRightPlane: Plane
-    private let isLiveLeftPlane: Plane
     private let isLiveRightPlane: Plane
-    private let stationLeftPlane: Plane
     private let stationRightPlane: Plane
 
     private let item: Station
@@ -84,31 +81,16 @@ public class StationItemPage: DestroyablePage {
         self.pageNamePlane = pageNamePlane
         self.pageNamePlane.moveAbove(other: self.borderPlane)
 
-        guard
-            let stationLeftPlane = Plane(
-                in: pagePlane,
-                state: .init(
-                    absX: 2,
-                    absY: 1,
-                    width: 8,
-                    height: 1
-                ),
-                debugID: "STATION_UI_\(item.id)_SL"
-            )
-        else {
-            return nil
-        }
-        self.stationLeftPlane = stationLeftPlane
-        self.stationLeftPlane.moveAbove(other: self.pageNamePlane)
+        let contentWidth = max(state.width, 4) - 4
 
-        let stationRightWidth = min(UInt32(item.name.count), state.width - 12)
+        // Station name - row 1, primary
         guard
             let stationRightPlane = Plane(
                 in: pagePlane,
                 state: .init(
-                    absX: 11,
+                    absX: 2,
                     absY: 1,
-                    width: stationRightWidth,
+                    width: min(UInt32(item.name.count), contentWidth),
                     height: 1
                 ),
                 debugID: "STATION_UI_\(item.id)_SR"
@@ -117,69 +99,16 @@ public class StationItemPage: DestroyablePage {
             return nil
         }
         self.stationRightPlane = stationRightPlane
-        self.stationRightPlane.moveAbove(other: self.stationLeftPlane)
+        self.stationRightPlane.moveAbove(other: self.pageNamePlane)
 
-        guard
-            let notesLeftPlane = Plane(
-                in: pagePlane,
-                state: .init(
-                    absX: 2,
-                    absY: 3,
-                    width: 6,
-                    height: 1
-                ),
-                debugID: "STATION_UI_\(item.id)_DL"
-            )
-        else {
-            return nil
-        }
-        self.notesLeftPlane = notesLeftPlane
-        self.notesLeftPlane.moveAbove(other: self.stationRightPlane)
-
-        var notesRightWidth = min(UInt32(item.editorialNotes?.standard?.count ?? 1), state.width - 10)
-        if notesRightWidth == 0 { notesRightWidth = 1 }
-        guard
-            let notesRightPlane = Plane(
-                in: pagePlane,
-                state: .init(
-                    absX: 9,
-                    absY: 3,
-                    width: notesRightWidth,
-                    height: 1
-                ),
-                debugID: "STATION_UI_\(item.id)_DR"
-            )
-        else {
-            return nil
-        }
-        self.notesRightPlane = notesRightPlane
-        self.notesRightPlane.moveAbove(other: self.notesLeftPlane)
-
-        guard
-            let isLiveLeftPlane = Plane(
-                in: pagePlane,
-                state: .init(
-                    absX: 2,
-                    absY: 2,
-                    width: 7,
-                    height: 1
-                ),
-                debugID: "STATION_UI_\(item.id)_CL"
-            )
-        else {
-            return nil
-        }
-        self.isLiveLeftPlane = isLiveLeftPlane
-        self.isLiveLeftPlane.moveAbove(other: self.notesRightPlane)
-
-        let isLiveRightWidth = min(UInt32("\(item.isLive)".count), state.width - 11)
+        // IsLive - row 2, secondary
         guard
             let isLiveRightPlane = Plane(
                 in: pagePlane,
                 state: .init(
-                    absX: 10,
+                    absX: 2,
                     absY: 2,
-                    width: isLiveRightWidth,
+                    width: min(UInt32("\(item.isLive)".count), contentWidth),
                     height: 1
                 ),
                 debugID: "STATION_UI_\(item.id)_CR"
@@ -188,7 +117,27 @@ public class StationItemPage: DestroyablePage {
             return nil
         }
         self.isLiveRightPlane = isLiveRightPlane
-        self.isLiveRightPlane.moveAbove(other: self.isLiveLeftPlane)
+        self.isLiveRightPlane.moveAbove(other: self.stationRightPlane)
+
+        // Notes - row 3, tertiary
+        var notesWidth = min(UInt32(item.editorialNotes?.standard?.count ?? 1), contentWidth)
+        if notesWidth == 0 { notesWidth = 1 }
+        guard
+            let notesRightPlane = Plane(
+                in: pagePlane,
+                state: .init(
+                    absX: 2,
+                    absY: 3,
+                    width: notesWidth,
+                    height: 1
+                ),
+                debugID: "STATION_UI_\(item.id)_DR"
+            )
+        else {
+            return nil
+        }
+        self.notesRightPlane = notesRightPlane
+        self.notesRightPlane.moveAbove(other: self.isLiveRightPlane)
 
         self.item = item
 
@@ -206,22 +155,16 @@ public class StationItemPage: DestroyablePage {
         plane.setColorPair(colorConfig.page)
         borderPlane.setColorPair(colorConfig.border)
         pageNamePlane.setColorPair(colorConfig.pageName)
-        stationLeftPlane.setColorPair(colorConfig.stationLeft)
         stationRightPlane.setColorPair(colorConfig.stationRight)
-        notesLeftPlane.setColorPair(colorConfig.notesLeft)
         notesRightPlane.setColorPair(colorConfig.notesRight)
-        isLiveLeftPlane.setColorPair(colorConfig.isLiveLeft)
         isLiveRightPlane.setColorPair(colorConfig.isLiveRight)
 
         plane.blank()
         borderPlane.windowBorder(width: state.width, height: state.height)
         pageNamePlane.putString("Station", at: (0, 0))
-        stationLeftPlane.putString("Station:", at: (0, 0))
         stationRightPlane.putString(item.name, at: (0, 0))
-        notesLeftPlane.putString("Notes:", at: (0, 0))
-        notesRightPlane.putString(item.editorialNotes?.standard ?? "", at: (0, 0))
-        isLiveLeftPlane.putString("IsLive:", at: (0, 0))
         isLiveRightPlane.putString("\(item.isLive)", at: (0, 0))
+        notesRightPlane.putString(item.editorialNotes?.standard ?? "", at: (0, 0))
     }
 
     public func destroy() async {
@@ -234,18 +177,12 @@ public class StationItemPage: DestroyablePage {
         pageNamePlane.erase()
         pageNamePlane.destroy()
 
-        isLiveLeftPlane.erase()
-        isLiveLeftPlane.destroy()
         isLiveRightPlane.erase()
         isLiveRightPlane.destroy()
 
-        notesLeftPlane.erase()
-        notesLeftPlane.destroy()
         notesRightPlane.erase()
         notesRightPlane.destroy()
 
-        stationLeftPlane.erase()
-        stationLeftPlane.destroy()
         stationRightPlane.erase()
         stationRightPlane.destroy()
     }

@@ -5,14 +5,19 @@ public struct UIPageManager {
 
     static var configReload: Bool = false
 
-    var layoutRows: UInt32  // From left to right
-    var layoutColumns: UInt32  // From top to bottom
+    var layoutRows: UInt32
+    var layoutColumns: UInt32
 
-    // Basically an array of rows
+    // Row-based layout: layout[rowIndex] = [pages side-by-side in that row]
     var layout: [[Page]]
 
     var commandPage: CommandPage
     var windowTooSmallPage: WindowTooSmallPage
+
+    private static var currentWidth: UInt32 = 0
+    private static var currentHeight: UInt32 = 0
+    private static var searchActive: Bool = false
+    private static var queueActive: Bool = false
 
     public init?(
         uiConfig: Config.UIConfig,
@@ -22,20 +27,20 @@ public struct UIPageManager {
         let layoutConfig = uiConfig.layout
         self.layoutRows = layoutConfig.rows
         self.layoutColumns = layoutConfig.cols
-        for _ in 0..<layoutColumns {
+
+        for _ in 0..<layoutRows {
             layout.append([])
         }
 
+        // Fill pages left-to-right, top-to-bottom
         var index = 0
-        for i in 0..<Int(layoutColumns) {
-            for _ in 0..<Int(layoutRows) {
-
-                if index == layoutConfig.pages.count {
+        for row in 0..<Int(layoutRows) {
+            for _ in 0..<Int(layoutColumns) {
+                if index >= layoutConfig.pages.count {
                     continue
                 }
 
                 let pageType = layoutConfig.pages[index]
-
                 index += 1
 
                 switch pageType {
@@ -55,7 +60,7 @@ public struct UIPageManager {
                         logger?.critical("Failed to initiate Player Page.")
                         return nil
                     }
-                    layout[i].append(nowPlayingPage)
+                    layout[row].append(nowPlayingPage)
 
                 case .queue:
                     guard
@@ -63,7 +68,7 @@ public struct UIPageManager {
                             stdPlane: stdPlane,
                             state: PageState(
                                 absX: 0,
-                                absY: 13,
+                                absY: 0,
                                 width: 28,
                                 height: 13
                             )
@@ -72,14 +77,14 @@ public struct UIPageManager {
                         logger?.critical("Failed to initiate Queue Page.")
                         return nil
                     }
-                    layout[i].append(queuePage)
+                    layout[row].append(queuePage)
 
                 case .search:
                     guard
                         let searchPage = SearchPage(
                             stdPlane: stdPlane,
                             state: PageState(
-                                absX: 30,
+                                absX: 0,
                                 absY: 0,
                                 width: 28,
                                 height: 13
@@ -89,7 +94,7 @@ public struct UIPageManager {
                         logger?.critical("Failed to initiate Search Page.")
                         return nil
                     }
-                    layout[i].append(searchPage)
+                    layout[row].append(searchPage)
 
                 }
             }
@@ -116,24 +121,35 @@ public struct UIPageManager {
     public func forEachPage(
         _ action: @MainActor @escaping (_ page: Page, _ row: UInt32, _ col: UInt32) async -> Void
     ) async {
-        var col: UInt32 = 0
-        var row: UInt32 = 0
-        for rowLine in layout {
-            for page in rowLine {
-                await action(page, row, col)
-                col += 1
+        for (rowIndex, row) in layout.enumerated() {
+            for (colIndex, page) in row.enumerated() {
+                await action(page, UInt32(rowIndex), UInt32(colIndex))
             }
-            row += 1
-            col = 0
         }
     }
 
     public func renderPages() async {
+        // Detect search/queue state changes and trigger layout resize
+        let hasSearch = SearchManager.shared.lastSearchResult != nil
+        let hasQueue = Player.shared.queue.count > 1
+        let needsResize = (hasSearch != UIPageManager.searchActive) || (hasQueue != UIPageManager.queueActive)
+        if needsResize {
+            UIPageManager.searchActive = hasSearch
+            UIPageManager.queueActive = hasQueue
+            if UIPageManager.currentWidth > 0 && UIPageManager.currentHeight > 0 {
+                await resizePages(UIPageManager.currentWidth, UIPageManager.currentHeight)
+            }
+        }
+
         if UIPageManager.configReload {
             await forEachPage { page, _, _ in
                 page.updateColors()
             }
             UIPageManager.configReload = false
+            // Force full re-render so existing text picks up new colors
+            if UIPageManager.currentWidth > 0 && UIPageManager.currentHeight > 0 {
+                await resizePages(UIPageManager.currentWidth, UIPageManager.currentHeight)
+            }
         }
         if windowTooSmallPage.windowTooSmall() {
             await windowTooSmallPage.render()
@@ -149,48 +165,95 @@ public struct UIPageManager {
         _ newWidth: UInt32,
         _ newHeight: UInt32
     ) async {
+        UIPageManager.currentWidth = newWidth
+        UIPageManager.currentHeight = newHeight
+
         let commandPageHeight: UInt32 = 2
         let availableHeight = newHeight - commandPageHeight
 
-        let numColumns = UInt32(layout.count)
-        if numColumns == 0 {
+        let numRows = UInt32(layout.count)
+        if numRows == 0 {
             return
         }
 
-        let baseColumnWidth = newWidth / numColumns
-        let extraWidth = newWidth % numColumns
+        // Determine which rows are visible (hide search row when inactive)
+        var rowVisible: [Bool] = []
+        for row in layout {
+            let isSearchRow = row.contains(where: { $0 is SearchPage })
+            rowVisible.append(!isSearchRow || UIPageManager.searchActive)
+        }
 
-        var currentX: UInt32 = 0
+        let visibleRowCount = UInt32(rowVisible.filter { $0 }.count)
+        guard visibleRowCount > 0 else { return }
 
-        for (colIndex, colLine) in layout.enumerated() {
-            let columnWidth = baseColumnWidth + (UInt32(colIndex) < extraWidth ? 1 : 0)
+        let baseRowHeight = availableHeight / visibleRowCount
+        let extraHeight = availableHeight % visibleRowCount
 
-            let numRows = UInt32(colLine.count)
-            if numRows == 0 {
+        var currentY: UInt32 = 0
+        var visibleIndex: UInt32 = 0
+
+        for (rowIndex, row) in layout.enumerated() {
+            if !rowVisible[rowIndex] {
+                // Hide pages in this row (move off-screen with minimal size)
+                for page in row {
+                    await page.onResize(newPageState: PageState(
+                        absX: 0,
+                        absY: Int32(newHeight),
+                        width: 1,
+                        height: 1
+                    ))
+                }
                 continue
             }
 
-            let baseRowHeight = availableHeight / numRows
-            let extraHeight = availableHeight % numRows
+            let rowHeight = baseRowHeight + (visibleIndex < extraHeight ? 1 : 0)
 
-            var currentY: UInt32 = 0
+            // Determine visible columns in this row (hide queue when empty)
+            var visiblePages: [(Int, Page)] = []
+            for (colIndex, page) in row.enumerated() {
+                let isQueuePage = page is QueuePage
+                if isQueuePage && !UIPageManager.queueActive {
+                    // Hide this page
+                    await page.onResize(newPageState: PageState(
+                        absX: Int32(newWidth),
+                        absY: Int32(newHeight),
+                        width: 1,
+                        height: 1
+                    ))
+                } else {
+                    visiblePages.append((colIndex, page))
+                }
+            }
 
-            for (rowIndex, page) in colLine.enumerated() {
-                let pageHeight = baseRowHeight + (UInt32(rowIndex) < extraHeight ? 1 : 0)
+            let numVisibleCols = UInt32(visiblePages.count)
+            if numVisibleCols == 0 {
+                currentY += rowHeight
+                visibleIndex += 1
+                continue
+            }
+
+            let baseColWidth = newWidth / numVisibleCols
+            let extraWidth = newWidth % numVisibleCols
+
+            var currentX: UInt32 = 0
+
+            for (visColIndex, (_, page)) in visiblePages.enumerated() {
+                let pageWidth = baseColWidth + (UInt32(visColIndex) < extraWidth ? 1 : 0)
 
                 let newPageState = PageState(
                     absX: Int32(currentX),
                     absY: Int32(currentY),
-                    width: columnWidth,
-                    height: pageHeight
+                    width: pageWidth,
+                    height: rowHeight
                 )
 
                 await page.onResize(newPageState: newPageState)
                 await page.render()
 
-                currentY += pageHeight
+                currentX += pageWidth
             }
-            currentX += columnWidth
+            currentY += rowHeight
+            visibleIndex += 1
         }
         await commandPage.onResize(
             newPageState: .init(
@@ -219,36 +282,23 @@ public struct UIPageManager {
     }
 
     private func setMinimumRequiredDiminsions() async {
-        // key: col, val: width
-        var minWidthMap: [UInt32: UInt32] = [:]
-        // key: row, val: height
-        var minHeightMap: [UInt32: UInt32] = [:]
-
-        // Find the maximum width in minimum widths in one column
-        // And maximum height in minimum heights in one row
-        // If that makes sense...
-        await forEachPage { page, row, col in
-            let minDim = await page.getMinDimensions()
-            if (minWidthMap[col] == nil)
-                || (minWidthMap[col] != nil && minWidthMap[col]! < minDim.width)
-            {
-                minWidthMap[col] = minDim.width
-            }
-            if (minHeightMap[row] == nil)
-                || (minHeightMap[row] != nil && minHeightMap[row]! < minDim.height)
-            {
-                minHeightMap[row] = minDim.height
-            }
-        }
-
         var minWidth: UInt32 = 0
         var minHeight: UInt32 = 0
-        for width in minWidthMap.values {
-            minWidth += width
+
+        for row in layout {
+            var rowMinWidth: UInt32 = 0
+            var rowMinHeight: UInt32 = 0
+
+            for page in row {
+                let minDim = await page.getMinDimensions()
+                rowMinWidth += minDim.width
+                rowMinHeight = max(rowMinHeight, minDim.height)
+            }
+
+            minWidth = max(minWidth, rowMinWidth)
+            minHeight += rowMinHeight
         }
-        for height in minHeightMap.values {
-            minHeight += height
-        }
+
         await windowTooSmallPage.setMinRequiredDim((minWidth, minHeight))
     }
 

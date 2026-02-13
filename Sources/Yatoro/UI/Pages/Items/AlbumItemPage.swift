@@ -1,3 +1,4 @@
+import Foundation
 import MusicKit
 import SwiftNotCurses
 
@@ -9,14 +10,19 @@ public class AlbumItemPage: DestroyablePage {
 
     private let borderPlane: Plane
     private let pageNamePlane: Plane
-    private let genreLeftPlane: Plane
     private let genreRightPlane: Plane
-    private let albumLeftPlane: Plane
     private let albumRightPlane: Plane
-    private let artistLeftPlane: Plane
     private let artistRightPlane: Plane
 
+    // Release date display (used in artist detail page instead of genre)
+    private var releasedRightPlane: Plane?
+
+    private var artworkPlane: Plane?
+    private var artworkVisual: Visual?
+    private var isDestroyed: Bool = false
+
     private let item: Album
+    private let releaseDateStr: String
 
     public enum AlbumItemPageType {
         case searchPage
@@ -86,31 +92,34 @@ public class AlbumItemPage: DestroyablePage {
         self.pageNamePlane = pageNamePlane
         self.pageNamePlane.moveAbove(other: self.borderPlane)
 
+        let contentWidth = max(state.width, 4) - 4
+
+        // Album title - row 1, primary
         guard
-            let artistLeftPlane = Plane(
+            let albumRightPlane = Plane(
                 in: pagePlane,
                 state: .init(
                     absX: 2,
                     absY: 1,
-                    width: 7,
+                    width: min(UInt32(item.title.count), contentWidth),
                     height: 1
                 ),
-                debugID: "ALBUM_UI_\(item.id)_ARL"
+                debugID: "ALBUM_UI_\(item.id)_AR"
             )
         else {
             return nil
         }
-        self.artistLeftPlane = artistLeftPlane
-        self.artistLeftPlane.moveAbove(other: self.pageNamePlane)
+        self.albumRightPlane = albumRightPlane
+        self.albumRightPlane.moveAbove(other: self.pageNamePlane)
 
-        let artistRightWidth = min(UInt32(item.artistName.count), state.width - 11)
+        // Artist - row 2, secondary
         guard
             let artistRightPlane = Plane(
                 in: pagePlane,
                 state: .init(
-                    absX: 10,
-                    absY: 1,
-                    width: artistRightWidth,
+                    absX: 2,
+                    absY: 2,
+                    width: min(UInt32(item.artistName.count), contentWidth),
                     height: 1
                 ),
                 debugID: "ALBUM_UI_\(item.id)_ARR"
@@ -119,25 +128,9 @@ public class AlbumItemPage: DestroyablePage {
             return nil
         }
         self.artistRightPlane = artistRightPlane
-        self.artistLeftPlane.moveAbove(other: self.artistLeftPlane)
+        self.artistRightPlane.moveAbove(other: self.albumRightPlane)
 
-        guard
-            let genreLeftPlane = Plane(
-                in: pagePlane,
-                state: .init(
-                    absX: 2,
-                    absY: 3,
-                    width: 6,
-                    height: 1
-                ),
-                debugID: "ALBUM_UI_\(item.id)_GL"
-            )
-        else {
-            return nil
-        }
-        self.genreLeftPlane = genreLeftPlane
-        self.genreLeftPlane.moveAbove(other: self.artistRightPlane)
-
+        // Genre string
         var genreStr = ""
         for genre in item.genreNames {
             if genre == "Music" {
@@ -148,14 +141,15 @@ public class AlbumItemPage: DestroyablePage {
         if genreStr.count >= 2 {
             genreStr.removeLast(2)
         }
-        let genreRightWidth = min(UInt32(genreStr.count), state.width - 10)
+
+        // Genre - row 3, tertiary
         guard
             let genreRightPlane = Plane(
                 in: pagePlane,
                 state: .init(
-                    absX: 9,
+                    absX: 2,
                     absY: 3,
-                    width: genreRightWidth,
+                    width: min(UInt32(genreStr.count), contentWidth),
                     height: 1
                 ),
                 debugID: "ALBUM_UI_\(item.id)_GR"
@@ -164,46 +158,70 @@ public class AlbumItemPage: DestroyablePage {
             return nil
         }
         self.genreRightPlane = genreRightPlane
-        self.genreRightPlane.moveAbove(other: self.genreLeftPlane)
-
-        guard
-            let albumLeftPlane = Plane(
-                in: pagePlane,
-                state: .init(
-                    absX: 2,
-                    absY: 2,
-                    width: 6,
-                    height: 1
-                ),
-                debugID: "ALBUM_UI_\(item.id)_AL"
-            )
-        else {
-            return nil
-        }
-        self.albumLeftPlane = albumLeftPlane
-        self.albumLeftPlane.moveAbove(other: self.genreRightPlane)
-
-        let albumRightWidth = min(UInt32(item.title.count), state.width - 10)
-        guard
-            let albumRightPlane = Plane(
-                in: pagePlane,
-                state: .init(
-                    absX: 9,
-                    absY: 2,
-                    width: albumRightWidth,
-                    height: 1
-                ),
-                debugID: "ALBUM_UI_\(item.id)_AR"
-            )
-        else {
-            return nil
-        }
-        self.albumRightPlane = albumRightPlane
-        self.albumRightPlane.moveAbove(other: self.albumLeftPlane)
+        self.genreRightPlane.moveAbove(other: self.artistRightPlane)
 
         self.item = item
 
+        let dateFormatter = DateFormatter()
+        dateFormatter.dateFormat = "d MMM yyyy"
+        self.releaseDateStr = item.releaseDate.map { dateFormatter.string(from: $0) } ?? "Unknown"
+
+        // For artist detail page, create release date plane (shown instead of genre)
+        if type == .artistDetailPage {
+            self.releasedRightPlane = Plane(
+                in: pagePlane,
+                state: .init(
+                    absX: 2,
+                    absY: 3,
+                    width: min(UInt32(releaseDateStr.count), contentWidth),
+                    height: 1
+                ),
+                debugID: "ALBUM_UI_\(item.id)_RR"
+            )
+        }
+
         updateColors()
+        loadArtwork()
+    }
+
+    private func loadArtwork() {
+        guard state.width > 15 else { return }
+        if let url = item.artwork?.url(width: 50, height: 50) {
+            downloadImageAndConvertToRGBA(url: url, width: 50, heigth: 50) { pixelArray in
+                if let pixelArray = pixelArray {
+                    Task { @MainActor in
+                        self.handleArtwork(pixelArray: pixelArray)
+                    }
+                }
+            }
+        }
+    }
+
+    private func handleArtwork(pixelArray: [UInt8]) {
+        guard !isDestroyed, state.width > 15, let notcurses = UI.notcurses else { return }
+        let artWidth: UInt32 = 6
+        let artHeight: UInt32 = 3
+        artworkPlane = Plane(
+            in: plane,
+            state: .init(
+                absX: Int32(state.width) - Int32(artWidth) - 1,
+                absY: 1,
+                width: artWidth,
+                height: artHeight
+            ),
+            debugID: "ALBUM_ART_\(item.id)"
+        )
+        guard let artworkPlane else { return }
+        artworkPlane.moveAbove(other: borderPlane)
+        artworkVisual = Visual(
+            in: notcurses,
+            width: 50,
+            height: 50,
+            from: pixelArray,
+            for: artworkPlane,
+            blit: .braille
+        )
+        artworkVisual?.render()
     }
 
     public func updateColors() {
@@ -221,19 +239,16 @@ public class AlbumItemPage: DestroyablePage {
         plane.setColorPair(colorConfig.page)
         borderPlane.setColorPair(colorConfig.border)
         pageNamePlane.setColorPair(colorConfig.pageName)
-        artistLeftPlane.setColorPair(colorConfig.artistLeft)
         artistRightPlane.setColorPair(colorConfig.artistRight)
-        genreLeftPlane.setColorPair(colorConfig.genreLeft)
-        genreRightPlane.setColorPair(colorConfig.genreRight)
-        albumLeftPlane.setColorPair(colorConfig.albumLeft)
         albumRightPlane.setColorPair(colorConfig.albumRight)
+        genreRightPlane.setColorPair(colorConfig.genreRight)
 
         plane.blank()
         borderPlane.windowBorder(width: state.width, height: state.height)
         pageNamePlane.putString("Album", at: (0, 0))
-        artistLeftPlane.putString("Artist:", at: (0, 0))
+        albumRightPlane.putString(item.title, at: (0, 0))
         artistRightPlane.putString(item.artistName, at: (0, 0))
-        genreLeftPlane.putString("Genre:", at: (0, 0))
+
         var genreStr = ""
         for genre in item.genreNames {
             if genre == "Music" {
@@ -244,12 +259,23 @@ public class AlbumItemPage: DestroyablePage {
         if genreStr.count >= 2 {
             genreStr.removeLast(2)
         }
-        genreRightPlane.putString(genreStr, at: (0, 0))
-        albumLeftPlane.putString("Album:", at: (0, 0))
-        albumRightPlane.putString(item.title, at: (0, 0))
+        if type == .artistDetailPage {
+            // Hide genre, show release date instead
+            genreRightPlane.erase()
+
+            releasedRightPlane?.setColorPair(colorConfig.genreRight)
+            releasedRightPlane?.putString(releaseDateStr, at: (0, 0))
+        } else {
+            genreRightPlane.putString(genreStr, at: (0, 0))
+        }
     }
 
     public func destroy() async {
+        isDestroyed = true
+        artworkVisual?.destroy()
+        artworkPlane?.erase()
+        artworkPlane?.destroy()
+
         plane.erase()
         plane.destroy()
 
@@ -259,20 +285,17 @@ public class AlbumItemPage: DestroyablePage {
         pageNamePlane.erase()
         pageNamePlane.destroy()
 
-        albumLeftPlane.erase()
-        albumLeftPlane.destroy()
         albumRightPlane.erase()
         albumRightPlane.destroy()
 
-        genreLeftPlane.erase()
-        genreLeftPlane.destroy()
         genreRightPlane.erase()
         genreRightPlane.destroy()
 
-        artistLeftPlane.erase()
-        artistLeftPlane.destroy()
         artistRightPlane.erase()
         artistRightPlane.destroy()
+
+        releasedRightPlane?.erase()
+        releasedRightPlane?.destroy()
     }
 
     public func render() async {

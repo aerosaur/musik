@@ -16,14 +16,12 @@ public class NowPlayingPage: DestroyablePage {
     private let sliderPlane: Plane
     private let sliderKnobPlane: Plane
     private let controlsPlane: Plane
-    private let artistLeftPlane: Plane
     private let artistRightPlane: Plane
-    private let songLeftPlane: Plane
     private let songRightPlane: Plane
-    private let albumLeftPlane: Plane
     private let albumRightPlane: Plane
     private let currentTimePlane: Plane
     private let durationPlane: Plane
+    private let emptyStatePlane: Plane
 
     private var artworkPlane: Plane?
     private var artworkVisual: Visual?
@@ -65,10 +63,18 @@ public class NowPlayingPage: DestroyablePage {
                 height: 1
             )
         )
-        sliderPlane.putString(
-            String(repeating: "─", count: Int(sliderPlane.width)),
-            at: (0, 0)
-        )
+        let trackWidth = Int(sliderPlane.width)
+        if trackWidth >= 3 {
+            sliderPlane.putString(
+                "├" + String(repeating: "─", count: trackWidth - 2) + "┤",
+                at: (0, 0)
+            )
+        } else {
+            sliderPlane.putString(
+                String(repeating: "─", count: trackWidth),
+                at: (0, 0)
+            )
+        }
         sliderKnobPlane.updateByPageState(
             .init(
                 absX: Int32(state.width) / 6,
@@ -79,9 +85,9 @@ public class NowPlayingPage: DestroyablePage {
         )
         controlsPlane.updateByPageState(
             .init(
-                absX: Int32(state.width) / 2 - 6,
+                absX: Int32(state.width) / 2 - 5,
                 absY: Int32(state.height) - 3,
-                width: 11,
+                width: 10,
                 height: 1
             )
         )
@@ -194,9 +200,9 @@ public class NowPlayingPage: DestroyablePage {
             let controlsPlane = Plane(
                 in: plane,
                 state: .init(
-                    absX: Int32(state.width) / 2 - 6,
+                    absX: Int32(state.width) / 2 - 5,
                     absY: Int32(state.height) - 3,
-                    width: 11,
+                    width: 10,
                     height: 1
                 ),
                 debugID: "NP_CONTROLS"
@@ -206,60 +212,13 @@ public class NowPlayingPage: DestroyablePage {
         }
         self.controlsPlane = controlsPlane
 
-        guard
-            let artistLeftPlane = Plane(
-                in: plane,
-                state: .init(
-                    absX: 2,
-                    absY: 2,
-                    width: 7,
-                    height: 1
-                ),
-                debugID: "NP_ARL"
-            )
-        else {
-            return nil
-        }
-        self.artistLeftPlane = artistLeftPlane
-
-        guard
-            let artistRightPlane = Plane(
-                in: plane,
-                state: .init(
-                    absX: 2,
-                    absY: 4,
-                    width: 1,
-                    height: 1
-                ),
-                debugID: "NP_ARR"
-            )
-        else {
-            return nil
-        }
-        self.artistRightPlane = artistRightPlane
-
-        guard
-            let songLeftPlane = Plane(
-                in: plane,
-                state: .init(
-                    absX: 2,
-                    absY: 3,
-                    width: 5,
-                    height: 1
-                ),
-                debugID: "NP_SL"
-            )
-        else {
-            return nil
-        }
-        self.songLeftPlane = songLeftPlane
-
+        // Song title - row 2, primary
         guard
             let songRightPlane = Plane(
                 in: plane,
                 state: .init(
                     absX: 2,
-                    absY: 4,
+                    absY: 2,
                     width: 1,
                     height: 1
                 ),
@@ -270,22 +229,24 @@ public class NowPlayingPage: DestroyablePage {
         }
         self.songRightPlane = songRightPlane
 
+        // Artist - row 3, secondary
         guard
-            let albumLeftPlane = Plane(
+            let artistRightPlane = Plane(
                 in: plane,
                 state: .init(
                     absX: 2,
-                    absY: 4,
-                    width: 6,
+                    absY: 3,
+                    width: 1,
                     height: 1
                 ),
-                debugID: "NP_ALL"
+                debugID: "NP_ARR"
             )
         else {
             return nil
         }
-        self.albumLeftPlane = albumLeftPlane
+        self.artistRightPlane = artistRightPlane
 
+        // Album - row 4, tertiary
         guard
             let albumRightPlane = Plane(
                 in: plane,
@@ -334,6 +295,24 @@ public class NowPlayingPage: DestroyablePage {
         }
         self.durationPlane = durationPlane
 
+        // Empty state — centered "—" when nothing is playing
+        guard
+            let emptyStatePlane = Plane(
+                in: plane,
+                state: .init(
+                    absX: Int32(state.width / 2),
+                    absY: Int32(state.height / 2),
+                    width: 1,
+                    height: 1
+                ),
+                debugID: "NP_EMPTY"
+            )
+        else {
+            return nil
+        }
+        self.emptyStatePlane = emptyStatePlane
+        self.emptyStatePlane.moveAbove(other: self.pagePlane)
+
         self.currentSong = player.nowPlaying
 
         updateColors()
@@ -347,22 +326,17 @@ public class NowPlayingPage: DestroyablePage {
         sliderPlane.setColorPair(colorConfig.slider)
         sliderKnobPlane.setColorPair(colorConfig.sliderKnob)
         controlsPlane.setColorPair(colorConfig.controls)
-        artistLeftPlane.setColorPair(colorConfig.artistLeft)
         artistRightPlane.setColorPair(colorConfig.artistRight)
-        songLeftPlane.setColorPair(colorConfig.songLeft)
         songRightPlane.setColorPair(colorConfig.songRight)
         albumRightPlane.setColorPair(colorConfig.albumRight)
         currentTimePlane.setColorPair(colorConfig.currentTime)
         durationPlane.setColorPair(colorConfig.duration)
-        albumLeftPlane.setColorPair(colorConfig.albumLeft)
+        emptyStatePlane.setColorPair(colorConfig.slider)
 
         borderPlane.windowBorder(width: state.width, height: state.height)
         pageNamePlane.putString("Now Playing", at: (0, 0))
         pagePlane.blank()
-        sliderKnobPlane.putString("♦", at: (0, 0))
-        artistLeftPlane.putString("Artist:", at: (0, 0))
-        songLeftPlane.putString("Song: ", at: (0, 0))
-        albumLeftPlane.putString("Album:", at: (0, 0))
+        sliderKnobPlane.putString("●", at: (0, 0))
 
         Task {
             await onResize(newPageState: self.state)
@@ -377,12 +351,12 @@ public class NowPlayingPage: DestroyablePage {
         lastPlayerStatus = player.status
         if lastPlayerStatus == .playing {
             controlsPlane.putString(
-                "◀◀   ⏸   ▶▶",
+                "◂◂  ‖  ▸▸",
                 at: (0, 0)
             )
         } else {
             controlsPlane.putString(
-                "◀◀   ▶   ▶▶",
+                "◂◂  ▸  ▸▸",
                 at: (0, 0)
             )
         }
@@ -483,26 +457,38 @@ public class NowPlayingPage: DestroyablePage {
                 processArtwork()
             }
         }
+        let contentWidth = max(self.state.width, 4) - 4
         guard let currentSong else {
-            self.artistRightPlane.updateByPageState(.init(absX: 2, absY: 4, width: 1, height: 1))
-            self.songRightPlane.updateByPageState(.init(absX: 2, absY: 4, width: 1, height: 1))
+            self.songRightPlane.updateByPageState(.init(absX: 2, absY: 2, width: 1, height: 1))
+            self.artistRightPlane.updateByPageState(.init(absX: 2, absY: 3, width: 1, height: 1))
             self.albumRightPlane.updateByPageState(.init(absX: 2, absY: 4, width: 1, height: 1))
             self.currentTimePlane.updateByPageState(.init(absX: 2, absY: 4, width: 1, height: 1))
             self.durationPlane.updateByPageState(.init(absX: 2, absY: 4, width: 1, height: 1))
+            // Show empty state
+            self.emptyStatePlane.updateByPageState(
+                .init(absX: Int32(state.width / 2), absY: Int32(state.height / 2), width: 1, height: 1)
+            )
+            self.emptyStatePlane.putString("—", at: (0, 0))
             return
         }
-        var width = min(UInt32(currentSong.artistName.count), self.state.width - 11)
-        self.artistRightPlane.erase()
-        self.artistRightPlane.updateByPageState(.init(absX: 10, absY: 2, width: width, height: 1))
-        self.artistRightPlane.putString(currentSong.artistName, at: (0, 0))
-        width = min(UInt32(currentSong.title.count), self.state.width - 11)
+        // Hide empty state when playing
+        self.emptyStatePlane.erase()
+        self.emptyStatePlane.updateByPageState(.init(absX: 0, absY: 0, width: 1, height: 1))
+        // Song title - row 2, primary
+        var width = min(UInt32(currentSong.title.count), contentWidth)
         self.songRightPlane.erase()
-        self.songRightPlane.updateByPageState(.init(absX: 10, absY: 3, width: width, height: 1))
+        self.songRightPlane.updateByPageState(.init(absX: 2, absY: 2, width: width, height: 1))
         self.songRightPlane.putString(currentSong.title, at: (0, 0))
-        width = min(UInt32(currentSong.albumTitle?.count ?? 3), self.state.width - 11)
+        // Artist - row 3, secondary
+        width = min(UInt32(currentSong.artistName.count), contentWidth)
+        self.artistRightPlane.erase()
+        self.artistRightPlane.updateByPageState(.init(absX: 2, absY: 3, width: width, height: 1))
+        self.artistRightPlane.putString(currentSong.artistName, at: (0, 0))
+        // Album - row 4, tertiary
+        width = min(UInt32(currentSong.albumTitle?.count ?? 1), contentWidth)
         self.albumRightPlane.erase()
-        self.albumRightPlane.updateByPageState(.init(absX: 10, absY: 4, width: width, height: 1))
-        self.albumRightPlane.putString(currentSong.albumTitle ?? "nil", at: (0, 0))
+        self.albumRightPlane.updateByPageState(.init(absX: 2, absY: 4, width: width, height: 1))
+        self.albumRightPlane.putString(currentSong.albumTitle ?? "", at: (0, 0))
 
         let currentTime = player.player.playbackTime
         let sliderPositionX = Int32(state.width) / 6
@@ -578,26 +564,20 @@ public class NowPlayingPage: DestroyablePage {
         self.durationPlane.erase()
         self.durationPlane.destroy()
 
-        self.songLeftPlane.erase()
-        self.songLeftPlane.destroy()
-
         self.songRightPlane.erase()
         self.songRightPlane.destroy()
 
-        self.albumLeftPlane.erase()
-        self.albumLeftPlane.destroy()
-
         self.albumRightPlane.erase()
         self.albumRightPlane.destroy()
-
-        self.artistLeftPlane.erase()
-        self.artistLeftPlane.destroy()
 
         self.artistRightPlane.erase()
         self.artistRightPlane.destroy()
 
         self.currentTimePlane.erase()
         self.currentTimePlane.destroy()
+
+        self.emptyStatePlane.erase()
+        self.emptyStatePlane.destroy()
 
         self.destroyArtwork()
     }

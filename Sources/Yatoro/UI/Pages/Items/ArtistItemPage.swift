@@ -9,11 +9,8 @@ public class ArtistItemPage: DestroyablePage {
 
     private let borderPlane: Plane
     private let pageNamePlane: Plane
-    private let artistLeftPlane: Plane
     private let artistRightPlane: Plane
-    private let genreLeftPlane: Plane
     private let genreRightPlane: Plane?
-    private let albumsLeftPlane: Plane
     private let albumsRightPlane: Plane?
 
     private let item: Artist
@@ -92,31 +89,16 @@ public class ArtistItemPage: DestroyablePage {
             logger?.error("ArtistItemPage: Unable to fetch genres and albums for \(item.id)")
         }
 
-        guard
-            let artistLeftPlane = Plane(
-                in: pagePlane,
-                state: .init(
-                    absX: 2,
-                    absY: 1,
-                    width: 7,
-                    height: 1
-                ),
-                debugID: "ARTIST_UI_\(item.id)_ARL"
-            )
-        else {
-            return nil
-        }
-        self.artistLeftPlane = artistLeftPlane
-        self.artistLeftPlane.moveAbove(other: self.pageNamePlane)
+        let contentWidth = max(state.width, 4) - 4
 
-        let artistRightWidth = min(UInt32(item.name.count), state.width - 11)
+        // Artist name - row 1, primary
         guard
             let artistRightPlane = Plane(
                 in: pagePlane,
                 state: .init(
-                    absX: 10,
+                    absX: 2,
                     absY: 1,
-                    width: artistRightWidth,
+                    width: min(UInt32(item.name.count), contentWidth),
                     height: 1
                 ),
                 debugID: "ARTIST_UI_\(item.id)_ARR"
@@ -125,25 +107,9 @@ public class ArtistItemPage: DestroyablePage {
             return nil
         }
         self.artistRightPlane = artistRightPlane
-        self.artistRightPlane.moveAbove(other: self.artistLeftPlane)
+        self.artistRightPlane.moveAbove(other: self.pageNamePlane)
 
-        guard
-            let genreLeftPlane = Plane(
-                in: pagePlane,
-                state: .init(
-                    absX: 2,
-                    absY: 2,
-                    width: 6,
-                    height: 1
-                ),
-                debugID: "ARTIST_UI_\(item.id)_GL"
-            )
-        else {
-            return nil
-        }
-        self.genreLeftPlane = genreLeftPlane
-        self.genreLeftPlane.moveAbove(other: self.artistRightPlane)
-
+        // Genre - row 2, secondary
         if let genres = item.genres {
             var genreStr = ""
             for genre in genres {
@@ -152,14 +118,13 @@ public class ArtistItemPage: DestroyablePage {
             if genreStr.count >= 2 {
                 genreStr.removeLast(2)
             }
-            let genreRightWidth = min(UInt32(genreStr.count), state.width - 10)
             guard
                 let genreRightPlane = Plane(
                     in: pagePlane,
                     state: .init(
-                        absX: 9,
+                        absX: 2,
                         absY: 2,
-                        width: genreRightWidth,
+                        width: min(UInt32(genreStr.count), contentWidth),
                         height: 1
                     ),
                     debugID: "ARTIST_UI_\(item.id)_GR"
@@ -168,28 +133,12 @@ public class ArtistItemPage: DestroyablePage {
                 return nil
             }
             self.genreRightPlane = genreRightPlane
-            self.genreRightPlane?.moveAbove(other: self.genreLeftPlane)
+            self.genreRightPlane?.moveAbove(other: self.artistRightPlane)
         } else {
             self.genreRightPlane = nil
         }
 
-        guard
-            let albumsLeftPlane = Plane(
-                in: pagePlane,
-                state: .init(
-                    absX: 2,
-                    absY: 3,
-                    width: 7,
-                    height: 1
-                ),
-                debugID: "ARTIST_UI_\(item.id)_ALL"
-            )
-        else {
-            return nil
-        }
-        self.albumsLeftPlane = albumsLeftPlane
-        self.albumsLeftPlane.moveAbove(other: self.genreRightPlane ?? self.genreLeftPlane)
-
+        // Albums - row 3, tertiary
         if let albums = item.albums {
             var albumsStr = ""
             var albumIndex = 0
@@ -203,14 +152,13 @@ public class ArtistItemPage: DestroyablePage {
             if albumsStr.count >= 2 {
                 albumsStr.removeLast(2)
             }
-            let albumsRightWidth = min(UInt32(albumsStr.count), state.width - 11)
             guard
                 let albumsRightPlane = Plane(
                     in: pagePlane,
                     state: .init(
-                        absX: 10,
+                        absX: 2,
                         absY: 3,
-                        width: albumsRightWidth,
+                        width: min(UInt32(albumsStr.count), contentWidth),
                         height: 1
                     ),
                     debugID: "ARTIST_UI_\(item.id)_ALR"
@@ -219,7 +167,7 @@ public class ArtistItemPage: DestroyablePage {
                 return nil
             }
             self.albumsRightPlane = albumsRightPlane
-            self.albumsRightPlane?.moveAbove(other: self.albumsLeftPlane)
+            self.albumsRightPlane?.moveAbove(other: self.genreRightPlane ?? self.artistRightPlane)
         } else {
             self.albumsRightPlane = nil
         }
@@ -242,19 +190,14 @@ public class ArtistItemPage: DestroyablePage {
         plane.setColorPair(colorConfig.page)
         borderPlane.setColorPair(colorConfig.border)
         pageNamePlane.setColorPair(colorConfig.pageName)
-        artistLeftPlane.setColorPair(colorConfig.artistLeft)
         artistRightPlane.setColorPair(colorConfig.artistRight)
-        genreLeftPlane.setColorPair(colorConfig.genreLeft)
         genreRightPlane?.setColorPair(colorConfig.genreRight)
-        albumsLeftPlane.setColorPair(colorConfig.albumsLeft)
         albumsRightPlane?.setColorPair(colorConfig.albumsRight)
 
         plane.blank()
         borderPlane.windowBorder(width: state.width, height: state.height)
         pageNamePlane.putString("Artist", at: (0, 0))
-        artistLeftPlane.putString("Artist:", at: (0, 0))
         artistRightPlane.putString(item.name, at: (0, 0))
-        genreLeftPlane.putString("Genre:", at: (0, 0))
         if let genres = item.genres {
             var genreStr = ""
             for genre in genres {
@@ -265,7 +208,6 @@ public class ArtistItemPage: DestroyablePage {
             }
             genreRightPlane?.putString(genreStr, at: (0, 0))
         }
-        albumsLeftPlane.putString("Albums:", at: (0, 0))
         if let albums = item.albums {
             var albumsStr = ""
             var albumIndex = 0
@@ -293,18 +235,12 @@ public class ArtistItemPage: DestroyablePage {
         pageNamePlane.erase()
         pageNamePlane.destroy()
 
-        artistLeftPlane.erase()
-        artistLeftPlane.destroy()
         artistRightPlane.erase()
         artistRightPlane.destroy()
 
-        genreLeftPlane.erase()
-        genreLeftPlane.destroy()
         genreRightPlane?.erase()
         genreRightPlane?.destroy()
 
-        albumsLeftPlane.erase()
-        albumsLeftPlane.destroy()
         albumsRightPlane?.erase()
         albumsRightPlane?.destroy()
     }

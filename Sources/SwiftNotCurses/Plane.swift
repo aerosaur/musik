@@ -218,6 +218,7 @@ public extension Plane {
     }
 
     func windowBorder(name: String? = nil, width: UInt32, height: UInt32) {
+        guard width >= 3 && height >= 3 else { return }
         putString(
             String(repeating: "─", count: Int(width) - 2),
             at: (1, 0)

@@ -16,13 +16,12 @@ public class ArtistDetailPage: DestroyablePage {
 
     private var artistTitlePlane: Plane  // Name of the artist
 
-    private var topSongsTitlePlane: Plane?  // "Top Songs:"
-    private var topSongsIndicesPlane: Plane?  // Indices of top songs
-    private var songItemPages: [SongItemPage?]
-
     private var albumsTitlePlane: Plane?  // "Albums:"
     private var albumsIndicesPlane: Plane?  // Indices of albums
     private var albumItemPages: [AlbumItemPage?]
+
+    private var lastSelectedIndex: Int = -1
+    private var scrollOffset: Int = 0
 
     private var maxAmountOfItemsDisplayed: Int {
         Int(state.height - 8) / 5
@@ -96,10 +95,7 @@ public class ArtistDetailPage: DestroyablePage {
         }
         self.artistTitlePlane = artistTitlePlane
 
-        self.songItemPages = []
         self.albumItemPages = []
-
-        loadTopSongs()
 
         loadAlbums()
 
@@ -109,95 +105,64 @@ public class ArtistDetailPage: DestroyablePage {
 
     }
 
-    private func loadTopSongs() {
-        guard let topSongs = artistDescription.topSongs, !topSongs.isEmpty else {
-            return
-        }
-        let oneThirdWidth = Int32(state.width) / 3
-        self.topSongsTitlePlane = Plane(
-            in: plane,
-            state: .init(
-                absX: oneThirdWidth + 2,
-                absY: 2,
-                width: 10,
-                height: 1
-            ),
-            debugID: "ARDPTST"
-        )
-        self.topSongsIndicesPlane = Plane(
-            in: plane,
-            state: .init(
-                absX: oneThirdWidth + 2,
-                absY: 4,
-                width: 2,
-                height: 5 * UInt32(min(topSongs.count, maxAmountOfItemsDisplayed + 1))
-            ),
-            debugID: "ARDPTSI"
-        )
-        for topSongIndex in 0..<topSongs.count {
-            if maxAmountOfItemsDisplayed < topSongIndex {
-                break
-            }
-            Task {
-                let topSongItem = SongItemPage(
-                    in: borderPlane,
-                    state: .init(
-                        absX: oneThirdWidth + 4,
-                        absY: 4 + Int32(topSongIndex * 5),
-                        width: UInt32(oneThirdWidth) - 6,
-                        height: 5
-                    ),
-                    type: .artistDetailPage,
-                    item: topSongs[topSongIndex]
-                )
-                self.songItemPages.append(topSongItem)
-            }
-        }
+    private func loadAlbums() {
+        loadAlbumsFromOffset(0)
     }
 
-    private func loadAlbums() {
+    private func loadAlbumsFromOffset(_ offset: Int) {
         guard let albums = artistDescription.lastAlbums, !albums.isEmpty else {
             return
         }
-        let twoThirdsWidth = Int32(state.width) / 3 * 2
-        self.albumsTitlePlane = Plane(
-            in: plane,
-            state: .init(
-                absX: twoThirdsWidth + 2,
-                absY: 2,
-                width: 7,
-                height: 1
-            ),
-            debugID: "ARDPAT"
-        )
-        self.albumsIndicesPlane = Plane(
-            in: plane,
-            state: .init(
-                absX: twoThirdsWidth + 2,
-                absY: 4,
-                width: 2,
-                height: 5 * UInt32(min(albums.count, maxAmountOfItemsDisplayed + 1))
-            ),
-            debugID: "ARDPAI"
-        )
-        for albumIndex in 0..<albums.count {
-            if maxAmountOfItemsDisplayed < albumIndex {
-                break
-            }
-            Task {
-                let albumItem = AlbumItemPage(
-                    in: borderPlane,
-                    state: .init(
-                        absX: twoThirdsWidth + 4,
-                        absY: 4 + Int32(albumIndex * 5),
-                        width: state.width / 3 - 6,
-                        height: 5
-                    ),
-                    item: albums[albumIndex],
-                    type: .artistDetailPage
-                )
-                self.albumItemPages.append(albumItem)
-            }
+        let oneThirdWidth = Int32(state.width) / 3
+
+        if self.albumsTitlePlane == nil {
+            self.albumsTitlePlane = Plane(
+                in: plane,
+                state: .init(
+                    absX: oneThirdWidth + 2,
+                    absY: 2,
+                    width: 7,
+                    height: 1
+                ),
+                debugID: "ARDPAT"
+            )
+        }
+        if self.albumsIndicesPlane == nil {
+            self.albumsIndicesPlane = Plane(
+                in: plane,
+                state: .init(
+                    absX: oneThirdWidth + 2,
+                    absY: 4,
+                    width: 3,
+                    height: UInt32(maxAmountOfItemsDisplayed + 1) * 5
+                ),
+                debugID: "ARDPAI"
+            )
+        }
+
+        // Destroy existing album item pages
+        for page in albumItemPages {
+            Task { await page?.destroy() }
+        }
+        albumItemPages = []
+
+        let albumItemWidth = state.width - UInt32(oneThirdWidth) - 7
+        let maxItems = maxAmountOfItemsDisplayed + 1
+        let end = min(albums.count, offset + maxItems)
+        for i in offset..<end {
+            let slot = i - offset
+            let albumItem = AlbumItemPage(
+                in: borderPlane,
+                state: .init(
+                    absX: oneThirdWidth + 5,
+                    absY: 4 + Int32(slot * 5),
+                    width: albumItemWidth,
+                    height: 5
+                ),
+                item: albums[i],
+                type: .artistDetailPage
+            )
+            self.albumItemPages.append(albumItem)
         }
     }
 
@@ -282,22 +247,46 @@ public class ArtistDetailPage: DestroyablePage {
         self.albumsIndicesPlane?.erase()
         self.albumsIndicesPlane?.destroy()
 
-        self.topSongsTitlePlane?.erase()
-        self.topSongsTitlePlane?.destroy()
-
-        self.topSongsIndicesPlane?.erase()
-        self.topSongsIndicesPlane?.destroy()
-
         for page in self.albumItemPages {
-            await page?.destroy()
-        }
-        for page in self.songItemPages {
             await page?.destroy()
         }
     }
 
     public func render() async {
+        let selectedIndex = SearchManager.shared.selectedIndex
+        guard selectedIndex != lastSelectedIndex else { return }
+        lastSelectedIndex = selectedIndex
 
+        guard let albums = artistDescription.lastAlbums, !albums.isEmpty else { return }
+
+        let maxItems = maxAmountOfItemsDisplayed + 1
+
+        // Calculate needed scroll offset
+        var newOffset = scrollOffset
+        if selectedIndex >= scrollOffset + maxItems {
+            newOffset = selectedIndex - maxItems + 1
+        } else if selectedIndex < scrollOffset {
+            newOffset = selectedIndex
+        }
+
+        // Re-render albums if scroll offset changed
+        if newOffset != scrollOffset {
+            scrollOffset = newOffset
+            loadAlbumsFromOffset(scrollOffset)
+            // Re-apply colors to new album items
+            for page in albumItemPages {
+                page?.updateColors()
+            }
+        }
+
+        // Update selection indicators
+        albumsIndicesPlane?.erase()
+        let end = min(albums.count, scrollOffset + maxItems)
+        for i in scrollOffset..<end {
+            let slot = i - scrollOffset
+            let marker = selectedIndex == i ? ">" : " "
+            albumsIndicesPlane?.putString("\(marker)\(i)", at: (0, 2 + Int32(slot * 5)))
+        }
     }
 
     public func updateColors() {
@@ -317,32 +306,15 @@ public class ArtistDetailPage: DestroyablePage {
 
         self.albumsIndicesPlane?.setColorPair(colorConfig.albumIndices)
         if let albums = artistDescription.lastAlbums, !albums.isEmpty {
-            for albumIndex in 0..<albums.count {
-                if maxAmountOfItemsDisplayed < albumIndex {
-                    break
-                }
-                self.albumsIndicesPlane?.putString("a\(albumIndex)", at: (0, 2 + Int32(albumIndex * 5)))
-            }
-        }
-
-        self.topSongsTitlePlane?.setColorPair(colorConfig.topSongsText)
-        self.topSongsTitlePlane?.putString("Top Songs:", at: (0, 0))
-
-        self.topSongsIndicesPlane?.setColorPair(colorConfig.topSongIndices)
-        if let songs = artistDescription.topSongs, !songs.isEmpty {
-            for songIndex in 0..<songs.count {
-                // if maxAmountOfItemsDisplayed < songIndex {
-                //     break
-                // }
-                self.topSongsIndicesPlane?.putString("s\(songIndex)", at: (0, 2 + Int32(songIndex * 5)))
+            let maxItems = maxAmountOfItemsDisplayed + 1
+            let end = min(albums.count, scrollOffset + maxItems)
+            for i in scrollOffset..<end {
+                let slot = i - scrollOffset
+                self.albumsIndicesPlane?.putString(" \(i)", at: (0, 2 + Int32(slot * 5)))
             }
         }
 
         for page in albumItemPages {
-            page?.updateColors()
-        }
-
-        for page in songItemPages {
             page?.updateColors()
         }
     }

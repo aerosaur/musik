@@ -85,6 +85,12 @@ struct AddToQueueCommand: AsyncParsableCommand {
                 to: command.to
             )
 
+        case .multiSearchResult(_):
+            await CommandInput.shared.setLastCommandOutput("Use Enter to select from multi-search results.")
+
+        case .dualPlaylistSearchResult(_):
+            await CommandInput.shared.setLastCommandOutput("Use Enter to select from playlist results.")
+
         case .help:
             await CommandInput.shared.setLastCommandOutput("Help page has no items to add to queue.")
 
@@ -147,6 +153,7 @@ struct AddToQueueCommand: AsyncParsableCommand {
         switch searchItem {
         case .all:
             await Player.shared.addItemsToQueue(items: items, at: to)
+            await CommandInput.shared.setLastCommandOutput("Queued \(items.count) items")
         case .some(let indices):
             let numbers = indices.filter({ $0.number != nil }).map({ $0.number! })
             await Player.shared.addItemsToQueue(
@@ -207,7 +214,20 @@ struct AddToQueueCommand: AsyncParsableCommand {
                             return
                         }
                         await Player.shared.addItemsToQueue(items: songs, at: to)
-                    default: await Player.shared.addItemsToQueue(items: [item], at: to)
+                    case .album(var album):
+                        logger?.debug("addRecentlyPlayed: Enriching album: \(album.title)")
+                        do {
+                            album = try await album.with([.tracks])
+                        } catch {
+                            logger?.error("addRecentlyPlayed: Failed to enrich album: \(error.localizedDescription)")
+                        }
+                        logger?.debug("addRecentlyPlayed: Adding album to queue: \(album.title)")
+                        await Player.shared.addItemsToQueue(items: MusicItemCollection([album]), at: to)
+                    case .station(let station):
+                        await Player.shared.addItemsToQueue(items: [station], at: to)
+                    @unknown default:
+                        logger?.warning("addRecentlyPlayed: Unknown RecentlyPlayedMusicItem type, skipping")
+                        await executionError("Unsupported item type")
                     }
                 }
         switch searchItem {
@@ -238,7 +258,7 @@ struct AddToQueueCommand: AsyncParsableCommand {
                 )
             )
             if to == .afterCurrentEntry {
-                recentlyPlayedItems = items.reversed()
+                recentlyPlayedItems = recentlyPlayedItems.reversed()
             }
             for item in recentlyPlayedItems {
                 await addRecentlyPlayedOrPlaylist(item)
@@ -258,10 +278,14 @@ struct AddToQueueCommand: AsyncParsableCommand {
             playlists = Array(items)
         }
         for playlist in playlists {
-            guard let songs = await songsFromPlaylist(playlist) else {
-                continue
-            }
-            await Player.shared.addItemsToQueue(items: songs, at: to)
+            // Add playlist directly to queue instead of extracting songs.
+            // This lets MusicKit resolve library playlists for playback.
+            await Player.shared.addPlaylistToQueue(playlist: playlist, at: to)
+        }
+        if playlists.count == 1 {
+            await CommandInput.shared.setLastCommandOutput("Queued: \(playlists[0].name)")
+        } else {
+            await CommandInput.shared.setLastCommandOutput("Queued \(playlists.count) playlists")
         }
     }
 
@@ -399,7 +423,8 @@ struct AddToQueueCommand: AsyncParsableCommand {
         let item = searchItem ?? .all
         switch item {
         case .all:
-            await Player.shared.addItemsToQueue(items: playlistDescription.songs, at: to)
+            // Add the playlist directly for better library playlist support
+            await Player.shared.addPlaylistToQueue(playlist: playlistDescription.playlist, at: to)
         case .some(let indices):
             let numbers =
                 indices
@@ -440,6 +465,14 @@ struct AddToQueueCommand: AsyncParsableCommand {
             return
         }
         await Player.shared.addItemsToQueue(items: [item], at: to)
+        if verbose {
+            let name: String
+            if let song = item as? Song { name = song.title }
+            else if let album = item as? Album { name = album.title }
+            else if let station = item as? Station { name = station.name }
+            else { name = "item" }
+            await CommandInput.shared.setLastCommandOutput("Queued: \(name)")
+        }
     }
 
     @MainActor

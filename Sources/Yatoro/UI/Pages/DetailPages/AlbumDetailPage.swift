@@ -25,6 +25,8 @@ public class AlbumDetailPage: DestroyablePage {
     private var artistItemPages: [ArtistItemPage?]
     private var songItemPages: [SongItemPage?]
 
+    private var lastSelectedIndex: Int = -1
+
     private var maxItemsDisplayed: Int {
         Int(state.height - 8) / 5
     }
@@ -298,7 +300,19 @@ public class AlbumDetailPage: DestroyablePage {
     }
 
     public func render() async {
+        let selectedIndex = SearchManager.shared.selectedIndex
+        guard selectedIndex != lastSelectedIndex else { return }
+        lastSelectedIndex = selectedIndex
 
+        // Selection only applies to songs
+        if !albumDescription.songs.isEmpty {
+            songIndicesPlane?.erase()
+            for songIndex in 0..<albumDescription.songs.count {
+                if maxItemsDisplayed < songIndex { break }
+                let marker = selectedIndex == songIndex ? ">" : "s"
+                songIndicesPlane?.putString("\(marker)\(songIndex)", at: (0, 2 + Int32(songIndex * 5)))
+            }
+        }
     }
 
     public func updateColors() {

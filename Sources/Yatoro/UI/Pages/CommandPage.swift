@@ -319,28 +319,28 @@ public class CommandPage: Page {
             switch size {
             case .nano, .mini, .default:
                 playStatusPlane.updateByPageState(.init(absX: x, absY: 0, width: 1, height: 1))
-                playStatusPlane.putString("#", at: (0, 0))
+                playStatusPlane.putString("■", at: (0, 0))
             case .plus, .mega:
                 playStatusPlane.updateByPageState(.init(absX: x, absY: 0, width: 9, height: 1))
-                playStatusPlane.putString("# Stopped", at: (0, 0))
+                playStatusPlane.putString("■ Stopped", at: (0, 0))
             }
         case .playing:
             switch size {
             case .nano, .mini, .default:
                 playStatusPlane.updateByPageState(.init(absX: x, absY: 0, width: 1, height: 1))
-                playStatusPlane.putString("▶", at: (0, 0))
+                playStatusPlane.putString("▸", at: (0, 0))
             case .plus, .mega:
                 playStatusPlane.updateByPageState(.init(absX: x, absY: 0, width: 9, height: 1))
-                playStatusPlane.putString("▶ Playing", at: (0, 0))
+                playStatusPlane.putString("▸ Playing", at: (0, 0))
             }
         case .paused:
             switch size {
             case .nano, .mini, .default:
                 playStatusPlane.updateByPageState(.init(absX: x, absY: 0, width: 1, height: 1))
-                playStatusPlane.putString("⏸", at: (0, 0))
+                playStatusPlane.putString("‖", at: (0, 0))
             case .plus, .mega:
                 playStatusPlane.updateByPageState(.init(absX: x, absY: 0, width: 8, height: 1))
-                playStatusPlane.putString("⏸ Paused", at: (0, 0))
+                playStatusPlane.putString("‖ Paused", at: (0, 0))
             }
         case .interrupted:
             switch size {
@@ -355,24 +355,24 @@ public class CommandPage: Page {
             switch size {
             case .nano, .mini, .default:
                 playStatusPlane.updateByPageState(.init(absX: x, absY: 0, width: 2, height: 1))
-                playStatusPlane.putString("▶▶", at: (0, 0))
+                playStatusPlane.putString("▸▸", at: (0, 0))
             case .plus, .mega:
                 playStatusPlane.updateByPageState(.init(absX: x, absY: 0, width: 10, height: 1))
-                playStatusPlane.putString("▶▶ Seeking", at: (0, 0))
+                playStatusPlane.putString("▸▸ Seeking", at: (0, 0))
             }
         case .seekingBackward:
             switch size {
             case .nano, .mini, .default:
                 playStatusPlane.updateByPageState(.init(absX: x, absY: 0, width: 2, height: 1))
-                playStatusPlane.putString("◀◀", at: (0, 0))
+                playStatusPlane.putString("◂◂", at: (0, 0))
             case .plus, .mega:
                 playStatusPlane.updateByPageState(.init(absX: x, absY: 0, width: 10, height: 1))
-                playStatusPlane.putString("◀◀ Seeking", at: (0, 0))
+                playStatusPlane.putString("◂◂ Seeking", at: (0, 0))
             }
         @unknown default:
             switch size {
             case .nano, .mini, .default:
-                playStatusPlane.updateByPageState(.init(absX: x, absY: 0, width: 2, height: 1))
+                playStatusPlane.updateByPageState(.init(absX: x, absY: 0, width: 1, height: 1))
                 playStatusPlane.putString("?", at: (0, 0))
             case .plus, .mega:
                 playStatusPlane.updateByPageState(.init(absX: x, absY: 0, width: 9, height: 1))
@@ -473,7 +473,12 @@ public class CommandPage: Page {
                 UI.notcurses?.disableCursor()
                 cursorState.enabled = false
             }
-            inputPlane.putString(await CommandInput.shared.getLastCommandOutput(), at: (0, 0))
+            let lastOutput = await CommandInput.shared.getLastCommandOutput()
+            if lastOutput.isEmpty {
+                inputPlane.putString(": command", at: (0, 0))
+            } else {
+                inputPlane.putString(lastOutput, at: (0, 0))
+            }
         }
     }
 
