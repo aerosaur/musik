@@ -4,7 +4,7 @@
 import PackageDescription
 
 let package = Package(
-    name: "Yatoro",
+    name: "Musik",
     platforms: [.macOS("14.0")],
     dependencies: [
         .package(
@@ -30,7 +30,7 @@ let package = Package(
             dependencies: ["notcurses"]
         ),
         .executableTarget(
-            name: "yatoro",
+            name: "musik",
             dependencies: [
                 .product(
                     name: "ArgumentParser",
@@ -41,7 +41,7 @@ let package = Package(
                 .product(name: "TOMLKit", package: "TOMLKit"),
                 "SwiftNotCurses",
             ],
-            path: "Sources/Yatoro",
+            path: "Sources/Musik",
             linkerSettings: [
                 .unsafeFlags([
                     "-Xlinker", "-sectcreate",
@@ -55,8 +55,8 @@ let package = Package(
             ]
         ),
         .testTarget(
-            name: "YatoroTests",
-            dependencies: ["yatoro"]
+            name: "MusikTests",
+            dependencies: ["musik"]
         ),
     ]
 )

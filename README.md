@@ -1,45 +1,31 @@
 <div align="center">
 
-# Yatoro
-**First Apple Music Player in Terminal**
+# Musik
+**Apple Music Player for the Terminal**
 
 </div>
 
 
 ## Overview
 
-Yatoro is a standalone VIM-like Apple Music player written in Swift intended to be used in a Terminal emulator.
+Musik is a VIM-like Apple Music player written in Swift for the terminal. Forked from [Yatoro](https://github.com/jayadamsmorgan/Yatoro) with enhanced search, recently played, and a custom Dieter Rams-inspired theme.
 
-Yatoro strives for bringing all the features of the Apple Music app into your Terminal.
+### Build from source
 
-![](yatoro.gif)
-
-
-## Installation
+```
+swift build --disable-sandbox -Xcc -DNCURSES_UNCTRL_H_incl
+cp .build/debug/musik /opt/homebrew/bin/musik
+```
 
 ### Requirements
 
 - Active Apple Music subscription
 - macOS Sonoma or higher
-    - MusicKit library is only available on macOS for now. The workaround for Linux is being actively looked into, if you have any ideas please let me know
 - Terminal of your preference
-
-### [Homebrew][homebrew]
-
-```
-brew tap jayadamsmorgan/yatoro
-brew install yatoro
-```
-
-### Build from source
-
-Check out [build instructions](BUILD.md).
 
 ### Note
 
-- **Important:** Add both your Terminal and the Yatoro application in `System Settings -> Privacy & Security -> Media & Apple Music`
-
-- Run the app
+- **Important:** Add both your Terminal and the Musik binary in `System Settings -> Privacy & Security -> Media & Apple Music`
 
 ## Feature status
 
@@ -66,7 +52,7 @@ Feel free to suggest new features through issues!
 
 ### Configuring
 
-Some of the options might be configured with command line arguments. Check `Yatoro -h`.
+Some of the options might be configured with command line arguments. Check `musik -h`.
 
 Another way to configure everything is configuration file. Check [CONFIGURATION](CONFIGURATION.md).
 
@@ -96,7 +82,7 @@ Command line arguments will overwrite the options set in configuration file.
 
 ### Commands
 
-Yatoro has a VIM-like command line. Check full command description in [COMMANDS](COMMANDS.md).
+Musik has a VIM-like command line. Check full command description in [COMMANDS](COMMANDS.md).
 
 
 ## Contributing
@@ -104,6 +90,4 @@ Yatoro has a VIM-like command line. Check full command description in [COMMANDS]
 Check [CONTRIBUTING](CONTRIBUTING.md) and [CODE_OF_CONDUCT](CODE_OF_CONDUCT.md).
 
 
-[homebrew]: https://brew.sh
-[release_page]: https://github.com/jayadamsmorgan/Yatoro/releases 
-[release_issue]: https://github.com/jayadamsmorgan/Yatoro/issues/3
+[upstream]: https://github.com/jayadamsmorgan/Yatoro

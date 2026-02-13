@@ -1,0 +1,115 @@
+import ArgumentParser
+import Foundation
+import Logging
+
+public let loggerLabel: String = "musik"
+
+@MainActor
+public var logger: Logger?
+
+extension Logger {
+    func trace(_ message: String) {
+        trace(Logger.Message(stringLiteral: message))
+    }
+
+    func debug(_ message: String) {
+        debug(Logger.Message(stringLiteral: message))
+    }
+
+    func info(_ message: String) {
+        info(Logger.Message(stringLiteral: message))
+    }
+
+    func warning(_ message: String) {
+        warning(Logger.Message(stringLiteral: message))
+    }
+
+    func error(_ message: String) {
+        error(Logger.Message(stringLiteral: message))
+    }
+
+    func critical(_ message: String) {
+        critical(Logger.Message(stringLiteral: message))
+    }
+}
+
+extension Logger.Level: @retroactive ExpressibleByArgument {}
+
+public struct FileLogger: LogHandler, Sendable, Equatable {
+    public var logLevel: Logger.Level
+    public var metadata: Logger.Metadata
+    public var fileURL: URL
+    public var fileHandle: FileHandle?
+
+    private let label: String
+    private let writeQueue = DispatchQueue(label: "musik.logger.file.write.queue")
+
+    public subscript(metadataKey key: String) -> Logger.Metadata.Value? {
+        get {
+            metadata[key]
+        }
+        set {
+            metadata[key] = newValue
+        }
+    }
+
+    public init(
+        label: String,
+        filePath: String,
+        logLevel: Logger.Level,
+        metadata: Logger.Metadata = [:]
+    ) {
+        self.label = label
+        self.logLevel = logLevel
+        self.metadata = metadata
+        self.fileURL = URL(fileURLWithPath: filePath)
+
+        let fileManager = FileManager.default
+        if !fileManager.fileExists(atPath: filePath) {
+            fileManager.createFile(
+                atPath: filePath,
+                contents: nil,
+                attributes: nil
+            )
+        }
+
+        do {
+            self.fileHandle = try FileHandle(forUpdating: fileURL)
+            self.fileHandle?.seekToEndOfFile()
+        } catch {
+            print("Failed to open file at \(filePath) for logging: \(error)")
+            self.fileHandle = nil
+        }
+    }
+
+    public func log(
+        level: Logger.Level,
+        message: Logger.Message,
+        metadata: Logger.Metadata?,
+        source: String,
+        file: String,
+        function: String,
+        line: UInt
+    ) {
+        let metadataString = metadata?.map { "\($0)=\($1)" }.joined(separator: " ") ?? ""
+        let timestamp = Date().formattedLogTimestamp()
+        let logLevel = level.rawValue.uppercased()
+        let logMessage = "[\(timestamp)] [\(logLevel)]: \(message) \(metadataString)\n"
+
+        writeQueue.async {
+            self.fileHandle?.write(logMessage.data(using: .utf8)!)
+        }
+    }
+}
+
+extension Date {
+    private static let logTimestampFormatter: DateFormatter = {
+        let formatter = DateFormatter()
+        formatter.dateFormat = "yyyy-MM-dd HH:mm:ss"
+        return formatter
+    }()
+
+    func formattedLogTimestamp() -> String {
+        return Date.logTimestampFormatter.string(from: self)
+    }
+}
