@@ -59,7 +59,7 @@ Enter command mode with `:` then use `:search` or just press `s`.
 
 | Key | Action |
 |-----|--------|
-| `j` / `k` | Move down / up |
+| `j` / `k` / `Down` / `Up` | Move down / up |
 | `l` / `Enter` | Open / play selected |
 | `h` / `Esc` | Go back / close |
 | `Left` / `Right` | Navigate search columns |
