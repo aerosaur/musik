@@ -3,91 +3,109 @@
 # Musik
 **Apple Music Player for the Terminal**
 
+A VIM-like Apple Music client built in Swift. Forked from [Yatoro](https://github.com/jayadamsmorgan/Yatoro) with enhanced search, queue management, and a Dieter Rams-inspired theme.
+
 </div>
 
+## What's Different from Yatoro
 
-## Overview
+- **Multi-column search** — artists, albums, and songs displayed simultaneously in a 3-column layout
+- **Natural language search** — type `recent`, `my playlists`, `artist radiohead` and it just works
+- **Recently played on startup** — auto-loads your history when you launch
+- **Queue management** — select, remove, and jump to items directly with keyboard
+- **Dual playlist search** — library and catalog playlists side by side
+- **Braun theme** — warm amber accent palette inspired by Dieter Rams
 
-Musik is a VIM-like Apple Music player written in Swift for the terminal. Forked from [Yatoro](https://github.com/jayadamsmorgan/Yatoro) with enhanced search, recently played, and a custom Dieter Rams-inspired theme.
-
-### Build from source
-
-```
-swift build --disable-sandbox -Xcc -DNCURSES_UNCTRL_H_incl
-cp .build/debug/musik /opt/homebrew/bin/musik
-```
+## Installation
 
 ### Requirements
 
 - Active Apple Music subscription
 - macOS Sonoma or higher
-- Terminal of your preference
+- Terminal emulator (Ghostty, iTerm2, etc.)
 
-### Note
+### Build from source
 
-- **Important:** Add both your Terminal and the Musik binary in `System Settings -> Privacy & Security -> Media & Apple Music`
+```
+git clone https://github.com/aerosaur/musik.git
+cd musik
+swift build --disable-sandbox -Xcc -DNCURSES_UNCTRL_H_incl
+cp .build/debug/musik /opt/homebrew/bin/musik
+```
 
-## Feature status
+### Post-install
 
-The player is still early in the development, so the features are quite limited for now.
+Add both your terminal and `musik` in **System Settings > Privacy & Security > Media & Apple Music**.
 
+Config lives at `~/.config/Musik/config.yaml`. Themes go in `~/.config/Musik/themes/`.
 
-| Feature             | Status  | Comments                                        |
-| ------------------- | ------- | ----------------------------------------------- |
-| Playing music       | Working |                                                 |
-| Player controls     | Working |                                                 |
-| Now playing artwork | Working |                                                 |
-| Status line         | Working |                                                 |
-| Command line        | Working |                                                 |
-| Searching music     | Working | Only with `:search` command                     |
-| Player queue        | Working | Only adding to queue with `:addToQueue` command |
-| Coloring the UI     | Working | Check [THEMING](THEMING.md)                     |
-| Mouse controls      |   TBD   |                                                 |
-| Arrow navigation    |   TBD   |                                                 |
+## Search
 
-Feel free to suggest new features through issues!
+Enter command mode with `:` then use `:search` or just press `s`.
 
+| Command | What it does |
+|---------|-------------|
+| `:search biffy clyro` | Multi-search across artists, albums, songs |
+| `:search -r` | Recently played |
+| `:search -s` | Recommended / suggestions |
+| `:search -l jazz` | Search your library |
+| `:search -t al radiohead` | Filter by type: `so` songs, `al` albums, `ar` artists, `pl` playlists |
 
-## Usage
+**Shortcuts in search input:** typing `recent` converts to `-r`, `recommended` to `-s`, `my playlists` to library playlist search.
 
-### Configuring
+## Controls
 
-Some of the options might be configured with command line arguments. Check `musik -h`.
+### Navigation
 
-Another way to configure everything is configuration file. Check [CONFIGURATION](CONFIGURATION.md).
+| Key | Action |
+|-----|--------|
+| `j` / `k` | Move down / up |
+| `l` / `Enter` | Open / play selected |
+| `h` / `Esc` | Go back / close |
+| `Left` / `Right` | Navigate search columns |
+| `TAB` | Toggle focus between search and queue |
+| `0-9` | Jump to queue position |
 
-Command line arguments will overwrite the options set in configuration file.
+### Playback
 
-### Default Controls
+| Key | Action |
+|-----|--------|
+| `Space` | Play / pause |
+| `f` / `b` | Next / previous track |
+| `Ctrl+f` / `Ctrl+b` | Seek forward / backward |
+| `r` | Restart song |
+| `=` / `-` | Volume up / down |
 
-| Action                                  | Modifier | Button |
-|-----------------------------------------| -------- | ------ |
-| Play/Pause Toggle                       |          |  `p`   |
-| Play                                    |  `SHIFT` |  `p`   |
-| Pause                                   |  `CTRL`  |  `p`   |
-| Stop                                    |          |  `c`   |
-| Clear queue                             |          |  `x`   |
-| Close last search result or detail page |          | `ESC`  |
-| Play next                               |          |  `f`   |
-| Play previous                           |          |  `b`   |
-| Start seeking forward                   |  `CTRL`  |  `f`   |
-| Start seeking backward                  |  `CTRL`  |  `b`   |
-| Stop seeking                            |          |  `g`   |
-| Restart song                            |          |  `r`   |
-| Start searching                         |          |  `s`   |
-| Station from current entry              |  `CTRL`  |  `s`   |
-| Open command line                       |  `SHIFT` |  `:`   |
-| Quit application                        |          |  `q`   |
-| Quit application (2)                    |  `CTRL`  |  `c`   |
+### Queue
 
-### Commands
+| Key | Action |
+|-----|--------|
+| `a` | Add all results and play |
+| `Backspace` | Remove selected from queue |
+| `x` | Clear queue |
+| `c` | Stop playback |
 
-Musik has a VIM-like command line. Check full command description in [COMMANDS](COMMANDS.md).
+### General
 
+| Key | Action |
+|-----|--------|
+| `:` | Open command line |
+| `s` | Start search |
+| `q` / `Ctrl+c` | Quit |
 
-## Contributing
+## Theming
 
-Check [CONTRIBUTING](CONTRIBUTING.md) and [CODE_OF_CONDUCT](CODE_OF_CONDUCT.md).
+Themes are YAML files in `~/.config/Musik/themes/`. Set the active theme in `config.yaml`:
 
+```yaml
+ui:
+  theme: braun
+```
 
-[upstream]: https://github.com/jayadamsmorgan/Yatoro
+Included themes: `braun` (default), `default`, `catppuccin-frappe`, `arc-raiders`.
+
+See [THEMING.md](THEMING.md) for the full color reference.
+
+## Credits
+
+Built on [Yatoro](https://github.com/jayadamsmorgan/Yatoro) by [@jayadamsmorgan](https://github.com/jayadamsmorgan). Licensed under MIT.
