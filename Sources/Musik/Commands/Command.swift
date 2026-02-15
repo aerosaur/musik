@@ -57,6 +57,7 @@ public struct Command: Sendable {
 
     @MainActor
     public static func parseCommand(_ commandString: String) async {
+        logger?.warning("PARSE COMMAND: '\(commandString)'")
         let commandParts = Array(commandString.split(separator: " "))
         guard let commandString = commandParts.first else {
             logger?.debug("Empty command entered")
@@ -134,15 +135,31 @@ public struct Command: Sendable {
         case .open: await OpenCommand.execute(arguments: arguments)
 
         case .close:
+            logger?.warning("CLOSE: queue=\(SearchPage.searchPageQueue.size()) result=\(SearchManager.shared.lastSearchResult.size()) topPage=\(String(describing: SearchPage.searchPageQueue?.page))")
+            // Always pop queue node (overlay or inline) alongside the result
+            if let top = SearchPage.searchPageQueue {
+                await top.page?.destroy()
+                SearchPage.searchPageQueue = top.previous
+                if top.page == nil {
+                    SearchPage.needsInlineRefresh = true
+                }
+            }
             if let prev = SearchManager.shared.lastSearchResult?.previous {
                 SearchManager.shared.lastSearchResult = prev
                 SearchManager.shared.resetSelection()
             } else {
                 // At root - reload recently played instead of going blank
+                SearchPage.needsInlineRefresh = true
                 await SearchManager.shared.loadRecentlyPlayed()
             }
 
         case .closeAll:
+            // Destroy all pages (overlay and inline) before reloading
+            while SearchPage.searchPageQueue.size() > 0 {
+                await SearchPage.searchPageQueue?.page?.destroy()
+                SearchPage.searchPageQueue = SearchPage.searchPageQueue?.previous
+            }
+            SearchPage.needsInlineRefresh = true
             await SearchManager.shared.loadRecentlyPlayed()
 
         case .selectDown:
@@ -165,6 +182,11 @@ public struct Command: Sendable {
             }
 
         case .addSelectedAndPlay:
+            // Capture whether the selected item opens a detail page BEFORE the
+            // action changes lastSearchResult (openArtist pushes artistDescription
+            // which would make the post-check return false incorrectly).
+            var didOpenDetail = false
+
             if SearchManager.shared.isMultiSearch {
                 let index = SearchManager.shared.selectedIndex
                 let colType = SearchManager.shared.multiSearchColumnType()
@@ -192,22 +214,14 @@ public struct Command: Sendable {
                 } else {
                     switch colType {
                     case 0:  // Artist - open detail
-                        // Push a single-type search result so OpenCommand can find the artist
                         if case .multiSearchResult(let msr) = lastResult.result,
                            let artists = msr.artists, index < artists.count {
-                            let tempResult = SearchResult(
-                                timestamp: msr.timestamp,
-                                searchType: msr.searchType,
-                                itemType: .artist,
-                                searchPhrase: msr.searchPhrase,
-                                result: artists
-                            )
-                            SearchManager.shared.lastSearchResult = ResultNode(
-                                previous: SearchManager.shared.lastSearchResult,
-                                .searchResult(tempResult),
-                                inPlace: true
-                            )
-                            await OpenCommand.execute(arguments: ["\(index)"])
+                            do {
+                                try await OpenCommand.openArtist(artists[index])
+                                didOpenDetail = true
+                            } catch {
+                                await CommandInput.shared.setLastCommandOutput("Failed to open artist")
+                            }
                         }
                     case 1:  // Album - queue whole album and play
                         if case .multiSearchResult(let msr) = lastResult.result,
@@ -233,10 +247,28 @@ public struct Command: Sendable {
                 let shouldOpen = SearchManager.shared.selectedItemShouldOpen()
                 if shouldOpen {
                     await OpenCommand.execute(arguments: [arg])
+                    didOpenDetail = true
                 } else {
                     await AddToQueueCommand.execute(arguments: [arg])
                     await Player.shared.play()
                 }
+            }
+            // Always reset selection so detail pages start at index 0
+            // and played items don't leave stale selection state.
+            SearchManager.shared.resetSelection()
+            // After playing, navigate back to root result (Recently Played).
+            // Skip when we opened a detail page (artist, etc.) — ESC will close it.
+            // Walk the result chain to root instead of async API call — avoids
+            // race conditions where the render recreates overlays during the await.
+            if !didOpenDetail {
+                while SearchPage.searchPageQueue.size() > 0 {
+                    await SearchPage.searchPageQueue?.page?.destroy()
+                    SearchPage.searchPageQueue = SearchPage.searchPageQueue?.previous
+                }
+                while SearchManager.shared.lastSearchResult?.previous != nil {
+                    SearchManager.shared.lastSearchResult = SearchManager.shared.lastSearchResult?.previous
+                }
+                SearchPage.needsInlineRefresh = true
             }
 
         case .openSelected:
@@ -263,11 +295,29 @@ public struct Command: Sendable {
             } else {
                 await AddToQueueCommand.execute(arguments: [arg])
                 await Player.shared.play()
+                SearchManager.shared.resetSelection()
+                while SearchPage.searchPageQueue.size() > 0 {
+                    await SearchPage.searchPageQueue?.page?.destroy()
+                    SearchPage.searchPageQueue = SearchPage.searchPageQueue?.previous
+                }
+                while SearchManager.shared.lastSearchResult?.previous != nil {
+                    SearchManager.shared.lastSearchResult = SearchManager.shared.lastSearchResult?.previous
+                }
+                SearchPage.needsInlineRefresh = true
             }
 
         case .addAllAndPlay:
             await AddToQueueCommand.execute(arguments: ["a"])
             await Player.shared.play()
+            SearchManager.shared.resetSelection()
+            while SearchPage.searchPageQueue.size() > 0 {
+                await SearchPage.searchPageQueue?.page?.destroy()
+                SearchPage.searchPageQueue = SearchPage.searchPageQueue?.previous
+            }
+            while SearchManager.shared.lastSearchResult?.previous != nil {
+                SearchManager.shared.lastSearchResult = SearchManager.shared.lastSearchResult?.previous
+            }
+            SearchPage.needsInlineRefresh = true
 
         case .volumeUp:
             await Player.shared.volumeUp()
@@ -279,9 +329,21 @@ public struct Command: Sendable {
             if SearchManager.shared.isMultiSearch {
                 SearchManager.shared.selectLeft()
             } else {
-                // Fall back to close behavior
-                SearchManager.shared.lastSearchResult = SearchManager.shared.lastSearchResult?.previous
-                SearchManager.shared.resetSelection()
+                // Fall back to close behavior — pop queue and result
+                if let top = SearchPage.searchPageQueue {
+                    await top.page?.destroy()
+                    SearchPage.searchPageQueue = top.previous
+                    if top.page == nil {
+                        SearchPage.needsInlineRefresh = true
+                    }
+                }
+                if let prev = SearchManager.shared.lastSearchResult?.previous {
+                    SearchManager.shared.lastSearchResult = prev
+                    SearchManager.shared.resetSelection()
+                } else {
+                    SearchManager.shared.lastSearchResult = nil
+                    SearchManager.shared.resetSelection()
+                }
             }
 
         case .selectRight:

@@ -135,7 +135,7 @@ public class UI {
         guard input.eventType != .release else {
             return
         }
-        logger?.trace("New input: \(input)")
+        logger?.warning("INPUT: id=\(input.id) utf8='\(input.utf8)' mods=\(input.modifiers) evtype=\(input.eventType)")
         inputQueue.add(input)
     }
 

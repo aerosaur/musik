@@ -268,7 +268,7 @@ struct OpenCommand: AsyncParsableCommand {
     }
 
     @MainActor
-    private static func openArtist(_ artistItem: Artist) async throws {
+    static func openArtist(_ artistItem: Artist) async throws {
         let artistItem = try await artistItem.with([.topSongs, .albums])
         // Sort albums chronologically (newest first)
         var sortedAlbums: MusicItemCollection<Album>?

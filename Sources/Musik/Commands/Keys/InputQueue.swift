@@ -127,6 +127,14 @@ public class InputQueue {
                     continue
                 }
 
+                // Direct ESC handler — bypasses mapping/tokenize/synthetic-injection pipeline.
+                // If this works, the bug is in the pipeline. If not, it's in close or render.
+                if input.id == 27 {
+                    logger?.warning("ESC DIRECT: bypassing mapping pipeline, calling close")
+                    await Command.parseCommand("close")
+                    continue
+                }
+
                 // This is what happens in all terminals except for iTerm2
                 if input.utf8 == ":" && input.modifiers.isEmpty {
                     UI.mode = .command
@@ -161,11 +169,15 @@ public class InputQueue {
                     if let mods = mapping.modifiers {
                         return input.modifiers.elementsEqual(mods) && input.id == id
                     } else {
+                        // ESC may report phantom modifiers in some terminals —
+                        // match by id alone so the mapping always fires.
+                        if id == 27 { return input.id == 27 }
                         return input.id == id && input.modifiers.isEmpty
                     }
                 })
 
                 guard let mapping else {
+                    logger?.warning("NO MAPPING for id=\(input.id) utf8='\(input.utf8)' mods=\(input.modifiers)")
                     continue
                 }
 

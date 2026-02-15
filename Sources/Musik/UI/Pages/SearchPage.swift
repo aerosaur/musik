@@ -14,6 +14,9 @@ public class SearchPage: DestroyablePage {
     private let itemIndicesPlane: Plane
 
     public static var searchPageQueue: SearchPageQueue?
+    /// Set by close command when an inline (nil-page) queue node is popped.
+    /// The next render frame will clear cached content and recreate from scratch.
+    public static var needsInlineRefresh = false
 
     private var state: PageState
 
@@ -495,7 +498,22 @@ public class SearchPage: DestroyablePage {
 
     public func render() async {
 
+        // Handle pending inline content refresh (set by close/selectLeft commands)
+        if SearchPage.needsInlineRefresh {
+            SearchPage.needsInlineRefresh = false
+            await refreshInlineContent()
+        }
+
+        // Sync queue with result chain (safety net for edge cases)
+        await syncQueueWithResults()
+
+        // Render current top overlay page (if any)
         await SearchPage.searchPageQueue?.page?.render()
+
+        // Track whether an overlay is covering the background —
+        // when true, skip updating the background selection indicator
+        // so arrow keys don't visually move both overlay and background.
+        let hasOverlay = SearchPage.searchPageQueue?.page != nil
 
         guard let result = SearchManager.shared.lastSearchResult?.result else {
             for case let item as DestroyablePage in searchCache {
@@ -506,6 +524,7 @@ public class SearchPage: DestroyablePage {
             await destroyDualPlaylistPlanes()
             lastSelectedIndex = -1
             lastSelectedColumn = -1
+            pageNamePlane.erase()
             pageNamePlane.width = 6
             pageNamePlane.putString("Search", at: (0, 0))
             searchPhrasePlane.updateByPageState(.init(absX: 2, absY: 0, width: 1, height: 1))
@@ -518,34 +537,34 @@ public class SearchPage: DestroyablePage {
             return
         }
 
-        // Update selection indicator on every frame
-        if case .multiSearchResult(_) = result {
-            await updateColumnsSelectionIndicator(columns: multiColumns) { colType in
-                if let msr = self.currentMultiResult {
-                    await self.rerenderMultiColumn(colType, multiResult: msr)
+        // Update selection indicator — skip when overlay covers the background
+        if !hasOverlay {
+            if case .multiSearchResult(_) = result {
+                await updateColumnsSelectionIndicator(columns: multiColumns) { colType in
+                    if let msr = self.currentMultiResult {
+                        await self.rerenderMultiColumn(colType, multiResult: msr)
+                    }
                 }
-            }
-        } else if case .dualPlaylistSearchResult(_) = result {
-            await updateColumnsSelectionIndicator(columns: dualColumns) { colType in
-                if let dpr = self.currentDualPlaylistResult {
-                    await self.rerenderDualPlaylistColumn(colType, dualResult: dpr)
+            } else if case .dualPlaylistSearchResult(_) = result {
+                await updateColumnsSelectionIndicator(columns: dualColumns) { colType in
+                    if let dpr = self.currentDualPlaylistResult {
+                        await self.rerenderDualPlaylistColumn(colType, dualResult: dpr)
+                    }
                 }
-            }
-        } else {
-            let scrollChanged = updateSelectionIndicator()
-            if scrollChanged, case .searchResult(let sr) = result {
-                for case let item as DestroyablePage in searchCache { await item.destroy() }
-                searchCache = []
-                itemIndicesPlane.erase()
-                await update(result: sr)
-                return
+            } else {
+                let scrollChanged = updateSelectionIndicator()
+                if scrollChanged, case .searchResult(let sr) = result {
+                    for case let item as DestroyablePage in searchCache { await item.destroy() }
+                    searchCache = []
+                    itemIndicesPlane.erase()
+                    await update(result: sr)
+                    return
+                }
             }
         }
 
-        while SearchPage.searchPageQueue.size() > SearchManager.shared.lastSearchResult.size() {
-            await SearchPage.searchPageQueue?.page?.destroy()
-            SearchPage.searchPageQueue = SearchPage.searchPageQueue?.previous
-        }
+        // Re-sync: a close command may have run during selection update
+        await syncQueueWithResults()
 
         guard SearchPage.searchPageQueue.size() < SearchManager.shared.lastSearchResult.size() else {
             return
@@ -568,7 +587,8 @@ public class SearchPage: DestroyablePage {
             }
 
             let searchPhrase = multiResult.searchPhrase
-            pageNamePlane.width = 8
+            pageNamePlane.erase()
+            pageNamePlane.width = 7
             pageNamePlane.putString("Search:", at: (0, 0))
             let searchPhrasePlaneWidth = min(
                 UInt32(searchPhrase.count),
@@ -606,6 +626,7 @@ public class SearchPage: DestroyablePage {
             }
 
             let searchPhrase = dualResult.searchPhrase
+            pageNamePlane.erase()
             pageNamePlane.width = 10
             pageNamePlane.putString("Playlists:", at: (0, 0))
             let searchPhrasePlaneWidth = min(
@@ -651,6 +672,7 @@ public class SearchPage: DestroyablePage {
 
             case .recentlyPlayed:
 
+                pageNamePlane.erase()
                 pageNamePlane.width = 15
                 pageNamePlane.putString("Recently Played", at: (0, 0))
                 searchPhrasePlane.updateByPageState(.init(absX: 2, absY: 0, width: 1, height: 1))
@@ -658,6 +680,7 @@ public class SearchPage: DestroyablePage {
 
                 await update(result: searchResult)
             case .recommended:
+                pageNamePlane.erase()
                 pageNamePlane.width = 11
                 pageNamePlane.putString("Recommended", at: (0, 0))
                 searchPhrasePlane.updateByPageState(.init(absX: 2, absY: 0, width: 1, height: 1))
@@ -669,6 +692,7 @@ public class SearchPage: DestroyablePage {
                 guard let searchPhrase = searchResult.searchPhrase else {
                     return
                 }
+                pageNamePlane.erase()
                 switch searchResult.itemType {
                 case .song:
                     pageNamePlane.width = 14
@@ -706,6 +730,7 @@ public class SearchPage: DestroyablePage {
                 guard let searchPhrase = searchResult.searchPhrase else {
                     return
                 }
+                pageNamePlane.erase()
                 switch searchResult.itemType {
                 case .song:
                     pageNamePlane.width = 14
@@ -773,6 +798,7 @@ public class SearchPage: DestroyablePage {
 
                 // Open Playlist in-place
                 let name = playlistDescription.playlist.name
+                pageNamePlane.erase()
                 pageNamePlane.width = UInt32(name.count)
                 pageNamePlane.putString(name, at: (0, 0))
                 searchPhrasePlane.updateByPageState(.init(absX: 2, absY: 0, width: 1, height: 1))
@@ -1166,6 +1192,36 @@ public class SearchPage: DestroyablePage {
         while queue != nil {
             await queue?.page?.destroy()
             queue = queue?.previous
+        }
+    }
+
+    /// Clears all inline (shared-plane) cached content and pops the current
+    /// inline queue node so the switch at the end of render() recreates it.
+    private func refreshInlineContent() async {
+        for case let item as DestroyablePage in searchCache { await item.destroy() }
+        searchCache = []
+        itemIndicesPlane.erase()
+        searchScrollOffset = 0
+        lastSelectedIndex = -1
+        lastSelectedColumn = -1
+        if isMultiSearchRendered { await destroyMultiSearchPlanes() }
+        if isDualPlaylistRendered { await destroyDualPlaylistPlanes() }
+        // Pop the current inline node so the switch recreates fresh content
+        if SearchPage.searchPageQueue?.page == nil {
+            SearchPage.searchPageQueue = SearchPage.searchPageQueue?.previous
+        }
+    }
+
+    /// Safety net: pops excess queue nodes until queue.size() matches result.size().
+    private func syncQueueWithResults() async {
+        var poppedInline = false
+        while SearchPage.searchPageQueue.size() > SearchManager.shared.lastSearchResult.size() {
+            if SearchPage.searchPageQueue?.page == nil { poppedInline = true }
+            await SearchPage.searchPageQueue?.page?.destroy()
+            SearchPage.searchPageQueue = SearchPage.searchPageQueue?.previous
+        }
+        if poppedInline {
+            await refreshInlineContent()
         }
     }
 
